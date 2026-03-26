@@ -12,10 +12,16 @@ pub const Chunk = struct {
     lines: std.ArrayList(usize),
     values: std.ArrayList(Value),
 
-    pub fn init(self: *Chunk) !void {
+    pub fn init(self: *Chunk) void {
         self.*.code = .empty;
         self.*.lines = .empty;
         self.*.values = .empty;
+    }
+
+    pub fn deinit(self: *Chunk, alloc: std.mem.Allocator) void {
+        self.*.code.deinit(alloc);
+        self.*.lines.deinit(alloc);
+        self.*.values.deinit(alloc);
     }
 
     pub fn write(self: *Chunk, alloc: std.mem.Allocator, byte: u8, line: usize) !void {

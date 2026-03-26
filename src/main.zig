@@ -9,6 +9,9 @@ pub fn main(init: std.process.Init) !void {
     var first_chunk: *Chunk = try alloc.create(Chunk);
     defer alloc.destroy(first_chunk);
 
+    first_chunk.init();
+    defer first_chunk.deinit(alloc);
+
     var i: usize = 0;
 
     while (i < 260) : (i += 1) {

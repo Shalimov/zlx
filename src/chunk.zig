@@ -1,6 +1,6 @@
 const std = @import("std");
 const Value = @import("value.zig").Value;
-const OpCode = @import("op-code.zig").OpCode;
+const OpCode = @import("op_code.zig").OpCode;
 
 const MAX_U8: u8 = std.math.maxInt(u8);
 const MAX_U16: u16 = std.math.maxInt(u16);
@@ -12,27 +12,29 @@ pub const Chunk = struct {
     lines: std.ArrayList(usize),
     values: std.ArrayList(Value),
 
-    pub fn init(self: *Chunk) void {
-        self.*.code = .empty;
-        self.*.lines = .empty;
-        self.*.values = .empty;
+    pub fn init() Chunk {
+        return .{
+            .code = .empty,
+            .lines = .empty,
+            .values = .empty,
+        };
     }
 
     pub fn deinit(self: *Chunk, alloc: std.mem.Allocator) void {
-        self.*.code.deinit(alloc);
-        self.*.lines.deinit(alloc);
-        self.*.values.deinit(alloc);
+        self.code.deinit(alloc);
+        self.lines.deinit(alloc);
+        self.values.deinit(alloc);
     }
 
     pub fn write(self: *Chunk, alloc: std.mem.Allocator, byte: u8, line: usize) !void {
-        try self.*.code.append(alloc, byte);
-        try self.*.lines.append(alloc, line);
+        try self.code.append(alloc, byte);
+        try self.lines.append(alloc, line);
     }
 
-    pub fn write_constant(self: *Chunk, alloc: std.mem.Allocator, value: Value, line: usize) !void {
-        try self.*.values.append(alloc, value);
+    pub fn writeConstant(self: *Chunk, alloc: std.mem.Allocator, value: Value, line: usize) !void {
+        try self.values.append(alloc, value);
 
-        const current_const_index = self.*.values.items.len - 1;
+        const current_const_index = self.values.items.len - 1;
 
         if (current_const_index <= MAX_U8) {
             try self.write(alloc, @intFromEnum(OpCode.op_constant), line);

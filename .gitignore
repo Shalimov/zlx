@@ -1,0 +1,22 @@
+# Build outputs
+zig-out/
+main
+
+# Zig cache
+.zig-cache
+
+# Temporary files
+*.tmp
+*.cache
+
+# OS files
+.DS_Store
+
+# Editor files
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Backups
+*~

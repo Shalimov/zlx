@@ -1,11 +1,7 @@
 const std = @import("std");
 
-pub const Value = union(enum) {
-    number: f64,
+pub const Value = f64;
 
-    pub fn print(self: Value) void {
-        switch (self) {
-            .number => |v| std.debug.print("{d}", .{v}),
-        }
-    }
-};
+pub fn printValue(value: Value) void {
+    std.debug.print("{d}", .{value});
+}

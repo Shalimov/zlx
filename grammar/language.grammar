@@ -1,0 +1,65 @@
+program        -> declaration* EOF ; 
+
+declaration    -> classDecl
+                | varDecl
+                | funDecl
+                | statement ;
+
+classDecl      -> "class" IDENTIFIER ( ( "<" | ">" ) IDENTIFIER )? "{" ( "static"? ( function | protocol ) | property )* "}" ;
+
+varDecl        -> "var" IDENTIFIER ( "=" expression )? ";" ;
+
+funDecl        -> "fun" function ;
+
+property       -> IDENTIFIER blockStmt ;
+
+protocol       -> "[" IDENTIFIER "]" "(" parameters? ")" blockStmt 
+
+function       -> IDENTIFIER "(" parameters? ")" blockStmt ;
+parameters     -> IDENTIFIER ( "," IDENTIFIER )* ;
+
+
+statement      -> exprStmt
+                | ifStmt
+                | forStmt
+                | whileStmt
+                | breakStmt
+                | returnStmt
+                | blockStmt ;
+
+ifStmt         -> "if" "(" expression ")" statement ( "else" statement )? ;
+
+forStmt        -> "for" "(" ( varDecl | exprStmt | ";" ) expression ";" expression? ")" statement ;
+whileStmt      -> "while" "(" expression ")" statement ;
+
+blockStmt      -> "{" declaration* "}" ;
+
+breakStmt      -> "break" ";" ;
+returnStmt     -> "return" expression? ";" ;
+
+exprStmt       -> expression ";" ;
+
+expression     -> commaseq ;
+
+commaseq       -> assignment ( "," assignment )* ;
+assignment     -> ( call "." )? IDENTIFIER "=" assignment | logicOr ;
+
+logicOr       -> logicAnd "or" logicOr ;
+logicAnd      -> ternary "and" ternary ;
+
+ternary        -> equality ( "?" ternary ":" ternary )? ;
+
+equality       -> comparison ( ( "!=" | "==" ) comparison )* ;
+comparison     -> term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
+
+term           -> factor ( ( "-" | "+" ) factor )* ;
+factor         -> unary ( ( "/" | "*" ) unary )* ;
+unary          -> ( "!" | "-" ) unary | call ;
+
+call           -> primary ( "(" arguments? ")" | "." IDENTIFIER )* ;
+arguments      -> assignment ( "," assignment )* ;
+
+primary        -> NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" | IDENTIFIER | lambda | super ;
+
+super          -> "super" "." IDENTIFIER ;
+lambda         -> "fun" "(" parameters? ")" ( blockStmt | expression ) ;

@@ -50,7 +50,10 @@ pub fn disassembleInstruction(chunk: *const Chunk, offset: usize) usize {
     switch (instruction) {
         .op_constant, .op_constant_long => return printConstInstruction(chunk, offset),
         .op_negate => return printSimpleInstruction("OP_NEGATE", offset),
+        .op_add => return printSimpleInstruction("OP_ADD", offset),
+        .op_sub => return printSimpleInstruction("OP_SUB", offset),
+        .op_mul => return printSimpleInstruction("OP_MUL", offset),
+        .op_div => return printSimpleInstruction("OP_DIV", offset),
         .op_return => return printSimpleInstruction("OP_RETURN", offset),
-        .op_add, .op_div, .op_mul, .op_sub => unreachable,
     }
 }

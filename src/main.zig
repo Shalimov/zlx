@@ -14,6 +14,11 @@ pub fn main(init: std.process.Init) !void {
     defer vm.deinit(alloc);
 
     try first_chunk.writeConstant(alloc, 120, 123);
+    try first_chunk.writeConstant(alloc, 110, 123);
+    try first_chunk.write(alloc, @intFromEnum(OpCode.op_sub), 123);
+    try first_chunk.writeConstant(alloc, 2, 123);
+    try first_chunk.write(alloc, @intFromEnum(OpCode.op_div), 123);
+
     try first_chunk.write(alloc, @intFromEnum(OpCode.op_negate), 123);
     try first_chunk.write(alloc, @intFromEnum(OpCode.op_return), 123);
 

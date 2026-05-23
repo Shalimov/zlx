@@ -2,7 +2,7 @@ const std = @import("std");
 
 const Chunk = @import("chunk.zig").Chunk;
 const OpCode = @import("op_code.zig").OpCode;
-const val = @import("value.zig");
+const Value = @import("value.zig").Value;
 
 fn printSimpleInstruction(name: []const u8, offset: usize) usize {
     std.debug.print("{s}\n", .{name});
@@ -21,7 +21,7 @@ fn printConstInstruction(chunk: *const Chunk, offset: usize) usize {
     }
 
     std.debug.print("{0s: <16} {1d: >4} '", .{ op_name, constant_index });
-    val.printValue(chunk.values.items[@as(usize, constant_index)]);
+    chunk.values.items[@as(usize, constant_index)].print();
     std.debug.print("'\n", .{});
 
     return offset + step;
@@ -50,6 +50,9 @@ pub fn disassembleInstruction(chunk: *const Chunk, offset: usize) usize {
     switch (instruction) {
         .op_constant, .op_constant_long => return printConstInstruction(chunk, offset),
         .op_negate => return printSimpleInstruction("OP_NEGATE", offset),
+        .op_nil => return printSimpleInstruction("OP_NIL", offset),
+        .op_true => return printSimpleInstruction("OP_TRUE", offset),
+        .op_false => return printSimpleInstruction("OP_FALSE", offset),
         .op_add => return printSimpleInstruction("OP_ADD", offset),
         .op_sub => return printSimpleInstruction("OP_SUB", offset),
         .op_mul => return printSimpleInstruction("OP_MUL", offset),

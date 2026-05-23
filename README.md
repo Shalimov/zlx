@@ -5,7 +5,7 @@ A small interpreter / bytecode virtual machine project implemented in Zig, follo
 ## Language Reference
 
 - Implementation language: Zig
-- Zig version: `0.16.0-dev`
+- Zig version: `0.16.0`
 
 ## Project Overview
 

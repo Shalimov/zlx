@@ -1,49 +1,50 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const OpCode = @import("op_code.zig").OpCode;
+
 const Chunk = @import("chunk.zig").Chunk;
-const val = @import("value.zig");
+const Compiler = @import("compiler.zig").Compiler;
 const debug = @import("debug.zig");
+const OpCode = @import("op_code.zig").OpCode;
+const Value = @import("value.zig").Value;
 
-pub const InstructionResult = enum {
-    ok,
-};
-
-const InterpretError = (std.mem.Allocator.Error || error{
+pub const InterpretError = (std.mem.Allocator.Error || error{
     CompileError,
     RuntimeError,
 });
 
 pub const VirtualMachine = struct {
+    const Self = @This();
+    pub const init: Self = .{ .chunk = undefined, .ip = undefined, .stack = .empty, .compiler = .init };
+
     ip: [*]u8,
     chunk: *Chunk,
-    stack: std.ArrayList(val.Value),
+    stack: std.ArrayList(Value),
+    compiler: Compiler,
 
-    pub const init: @This() = .{
-        .chunk = undefined,
-        .ip = undefined,
-        .stack = .empty,
-    };
+    pub fn interpret(self: *Self, alloc: std.mem.Allocator, source: []const u8) !void {
+        var chunk: Chunk = .init;
+        defer chunk.deinit(alloc);
 
-    pub fn interpret(self: *VirtualMachine, alloc: std.mem.Allocator, chunk: *Chunk) InterpretError!InstructionResult {
-        self.chunk = chunk;
-        self.ip = chunk.code.items.ptr;
+        try self.compiler.compile(alloc, source, &chunk);
 
-        return try self.run(alloc);
+        self.chunk = &chunk;
+        self.ip = self.chunk.code.items.ptr;
+
+        try self.run(alloc);
     }
 
-    pub fn deinit(self: *VirtualMachine, alloc: std.mem.Allocator) void {
+    pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
         self.stack.deinit(alloc);
     }
 
-    fn run(self: *VirtualMachine, alloc: std.mem.Allocator) InterpretError!InstructionResult {
+    fn run(self: *Self, alloc: std.mem.Allocator) InterpretError!void {
         while (true) {
             if (builtin.mode == .Debug) {
                 std.debug.print("        ", .{});
 
                 for (self.stack.items) |item| {
                     std.debug.print("[", .{});
-                    val.printValue(item);
+                    item.print();
                     std.debug.print("]", .{});
                 }
 
@@ -68,35 +69,71 @@ pub const VirtualMachine = struct {
                     try self.stack.append(alloc, value);
                 },
                 .op_negate => {
+                    const top_value = self.peek(0);
+
+                    if (top_value != .val_number) {
+                        return self.reportRuntimeError("Operand must be a number\n", .{});
+                    }
+
                     const top = self.stack.items.len - 1;
-                    self.stack.items[top] = -self.stack.items[top];
+                    self.stack.items[top].val_number = -top_value.val_number;
+                },
+                .op_nil => {
+                    try self.stack.append(alloc, .with_nil);
+                },
+                .op_true => {
+                    try self.stack.append(alloc, .with_true);
+                },
+                .op_false => {
+                    try self.stack.append(alloc, .with_false);
                 },
                 inline .op_add, .op_sub, .op_mul, .op_div => |op| {
-                    const x2 = self.stack.pop().?;
-                    const x1 = self.stack.pop().?;
+                    if (self.peek(0) != .val_number or self.peek(1) != .val_number) {
+                        return self.reportRuntimeError("Operands must be numbers\n", .{});
+                    }
 
-                    try self.stack.append(alloc, switch (op) {
+                    const x2 = self.stack.pop().?.val_number;
+                    const x1 = self.stack.pop().?.val_number;
+
+                    try self.stack.append(alloc, Value{ .val_number = switch (op) {
                         .op_add => x1 + x2,
                         .op_sub => x1 - x2,
                         .op_mul => x1 * x2,
                         .op_div => x1 / x2,
                         else => unreachable,
-                    });
+                    } });
                 },
                 .op_return => {
-                    val.printValue(self.stack.pop().?);
+                    self.stack.pop().?.print();
                     std.debug.print("\n", .{});
 
-                    return InstructionResult.ok;
+                    return;
                 },
             }
         }
     }
 
-    inline fn advance(self: *VirtualMachine) u8 {
+    inline fn peek(self: *Self, distance: usize) Value {
+        return self.stack.items[self.stack.items.len - 1 - distance];
+    }
+
+    inline fn advance(self: *Self) u8 {
         const instruction = self.ip[0];
         self.ip += 1;
 
         return instruction;
+    }
+
+    fn reportRuntimeError(self: *Self, comptime message: []const u8, args: anytype) InterpretError!void {
+        std.debug.print(message, args);
+
+        const current_ip_offset = self.ip - self.chunk.code.items.ptr - 1;
+        const current_line = self.chunk.lines.items[current_ip_offset];
+        std.debug.print("[line {d}] in script\n", .{current_line});
+
+        // Reset the stack
+        self.stack.clearRetainingCapacity();
+
+        return InterpretError.RuntimeError;
     }
 };

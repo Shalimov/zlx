@@ -5,20 +5,20 @@ const OpCode = @import("op_code.zig").OpCode;
 const MAX_U8: u8 = std.math.maxInt(u8);
 const MAX_U16: u16 = std.math.maxInt(u16);
 
-pub const ChunkError = error{ConstantOverflow};
+pub const ChunkError = (std.mem.Allocator.Error || error{
+    ConstantOverflow,
+});
 
 pub const Chunk = struct {
     code: std.ArrayList(u8),
     lines: std.ArrayList(usize),
     values: std.ArrayList(Value),
 
-    pub fn init() Chunk {
-        return .{
-            .code = .empty,
-            .lines = .empty,
-            .values = .empty,
-        };
-    }
+    pub const init: @This() = .{
+        .code = .empty,
+        .lines = .empty,
+        .values = .empty,
+    };
 
     pub fn deinit(self: *Chunk, alloc: std.mem.Allocator) void {
         self.code.deinit(alloc);
@@ -26,12 +26,12 @@ pub const Chunk = struct {
         self.values.deinit(alloc);
     }
 
-    pub fn write(self: *Chunk, alloc: std.mem.Allocator, byte: u8, line: usize) !void {
+    pub fn write(self: *Chunk, alloc: std.mem.Allocator, byte: u8, line: usize) ChunkError!void {
         try self.code.append(alloc, byte);
         try self.lines.append(alloc, line);
     }
 
-    pub fn writeConstant(self: *Chunk, alloc: std.mem.Allocator, value: Value, line: usize) !void {
+    pub fn writeConstant(self: *Chunk, alloc: std.mem.Allocator, value: Value, line: usize) ChunkError!void {
         try self.values.append(alloc, value);
 
         const current_const_index = self.values.items.len - 1;

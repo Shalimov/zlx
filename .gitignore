@@ -17,6 +17,7 @@ main
 *.swo
 .vscode/
 .idea/
+.zed/
 
 # Backups
 *~

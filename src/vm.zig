@@ -78,6 +78,10 @@ pub const VirtualMachine = struct {
                     const top = self.stack.items.len - 1;
                     self.stack.items[top].val_number = -top_value.val_number;
                 },
+                .op_not => {
+                    const top_value = self.stack.pop().?;
+                    try self.stack.append(alloc, if (top_value.isFalsy()) .with_true else .with_false);
+                },
                 .op_nil => {
                     try self.stack.append(alloc, .with_nil);
                 },

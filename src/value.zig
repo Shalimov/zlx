@@ -9,6 +9,14 @@ pub const Value = union(enum) {
     val_bool: bool,
     val_nil: u1,
 
+    pub fn isFalsy(self: Value) bool {
+        return switch (self) {
+            .val_bool => |val| !val,
+            .val_nil => true,
+            else => false,
+        };
+    }
+
     pub fn print(self: Value) void {
         switch (self) {
             .val_number => |val| std.debug.print("{d}", .{val}),

@@ -146,6 +146,7 @@ pub const Compiler = struct {
         try self.parsePrecedence(alloc, .ex_unary);
 
         try switch (operator_type) {
+            .token_bang => self.emitByte(alloc, @intFromEnum(OpCode.op_not)),
             .token_minus => self.emitByte(alloc, @intFromEnum(OpCode.op_negate)),
             else => unreachable,
         };

@@ -242,14 +242,13 @@ pub const Scanner = struct {
     }
 
     fn checkKeyword(self: *Scanner, pos: usize, keyword_part: []const u8, token_type: TokenType) TokenType {
-        if (!std.mem.eql(u8, self.start[pos..(pos + keyword_part.len)], keyword_part)) {
-            return TokenType.token_identifier;
+        if (self.current - self.start == pos + keyword_part.len and
+            std.mem.eql(u8, self.start[pos..(pos + keyword_part.len)], keyword_part))
+        {
+            return token_type;
         }
 
-        return switch (self.start[pos + keyword_part.len]) {
-            ' ', '\t', '\r', '\n', 0 => token_type,
-            else => TokenType.token_identifier,
-        };
+        return TokenType.token_identifier;
     }
 
     fn makeToken(self: *Scanner, tokenType: TokenType) Token {

@@ -9,6 +9,18 @@ pub const Value = union(enum) {
     val_bool: bool,
     val_nil: u1,
 
+    pub fn equals(self: Value, val: Value) bool {
+        if (std.meta.activeTag(self) != std.meta.activeTag(val)) {
+            return false;
+        }
+
+        return switch (self) {
+            .val_number => |v| v == val.val_number,
+            .val_bool => |v| v == val.val_bool,
+            .val_nil => true,
+        };
+    }
+
     pub fn isFalsy(self: Value) bool {
         return switch (self) {
             .val_bool => |val| !val,

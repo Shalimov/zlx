@@ -78,6 +78,32 @@ pub const VirtualMachine = struct {
                     const top = self.stack.items.len - 1;
                     self.stack.items[top].val_number = -top_value.val_number;
                 },
+                .op_equal => {
+                    const x2 = self.stack.pop().?;
+                    const x1 = self.stack.pop().?;
+
+                    try self.stack.append(alloc, Value{ .val_bool = x1.equals(x2) });
+                },
+                .op_less => {
+                    if (self.peek(0) != .val_number or self.peek(1) != .val_number) {
+                        return self.reportRuntimeError("Operands must be numbers\n", .{});
+                    }
+
+                    const x2 = self.stack.pop().?;
+                    const x1 = self.stack.pop().?;
+
+                    try self.stack.append(alloc, Value{ .val_bool = x1.val_number < x2.val_number });
+                },
+                .op_greater => {
+                    if (self.peek(0) != .val_number or self.peek(1) != .val_number) {
+                        return self.reportRuntimeError("Operands must be numbers\n", .{});
+                    }
+
+                    const x2 = self.stack.pop().?;
+                    const x1 = self.stack.pop().?;
+
+                    try self.stack.append(alloc, Value{ .val_bool = x1.val_number > x2.val_number });
+                },
                 .op_not => {
                     const top_value = self.stack.pop().?;
                     try self.stack.append(alloc, if (top_value.isFalsy()) .with_true else .with_false);

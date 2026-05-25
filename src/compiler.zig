@@ -135,6 +135,12 @@ pub const Compiler = struct {
             .token_minus => self.emitByte(alloc, @intFromEnum(OpCode.op_sub)),
             .token_star => self.emitByte(alloc, @intFromEnum(OpCode.op_mul)),
             .token_slash => self.emitByte(alloc, @intFromEnum(OpCode.op_div)),
+            .token_equal_equal => self.emitByte(alloc, @intFromEnum(OpCode.op_equal)),
+            .token_less => self.emitByte(alloc, @intFromEnum(OpCode.op_less)),
+            .token_greater => self.emitByte(alloc, @intFromEnum(OpCode.op_greater)),
+            .token_bang_equal => self.emitBytes(alloc, @intFromEnum(OpCode.op_equal), @intFromEnum(OpCode.op_not)),
+            .token_less_equal => self.emitBytes(alloc, @intFromEnum(OpCode.op_greater), @intFromEnum(OpCode.op_not)),
+            .token_greater_equal => self.emitBytes(alloc, @intFromEnum(OpCode.op_less), @intFromEnum(OpCode.op_not)),
             else => unreachable,
         };
     }

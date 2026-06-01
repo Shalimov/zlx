@@ -7,6 +7,8 @@ const debug = @import("debug.zig");
 const OpCode = @import("op_code.zig").OpCode;
 const Value = @import("value.zig").Value;
 
+const ObjectString = @import("object.zig").ObjectString;
+
 pub const InterpretError = (std.mem.Allocator.Error || error{
     CompileError,
     RuntimeError,
@@ -117,21 +119,60 @@ pub const VirtualMachine = struct {
                 .op_false => {
                     try self.stack.append(alloc, .with_false);
                 },
-                inline .op_add, .op_sub, .op_mul, .op_div => |op| {
+                .op_concat => {
+                    const b = self.peek(0);
+                    const a = self.peek(1);
+
+                    if (b == .val_obj and a == .val_obj and b.val_obj.type == .string and b.val_obj.type == a.val_obj.type) {
+                        const higher_part = self.stack.pop().?.val_obj.as(ObjectString);
+                        const lower_part = self.stack.pop().?.val_obj.as(ObjectString);
+
+                        var concat_result = try ObjectString.concat(alloc, lower_part.str, higher_part.str);
+
+                        try self.stack.append(alloc, Value{ .val_obj = concat_result.asObject() });
+                    } else {
+                        return self.reportRuntimeError("Operands must be strings\n", .{});
+                    }
+                },
+                .op_add => {
                     if (self.peek(0) != .val_number or self.peek(1) != .val_number) {
                         return self.reportRuntimeError("Operands must be numbers\n", .{});
                     }
 
-                    const x2 = self.stack.pop().?.val_number;
-                    const x1 = self.stack.pop().?.val_number;
+                    const b = self.stack.pop().?.val_number;
+                    const a = self.stack.pop().?.val_number;
 
-                    try self.stack.append(alloc, Value{ .val_number = switch (op) {
-                        .op_add => x1 + x2,
-                        .op_sub => x1 - x2,
-                        .op_mul => x1 * x2,
-                        .op_div => x1 / x2,
-                        else => unreachable,
-                    } });
+                    try self.stack.append(alloc, Value{ .val_number = a + b });
+                },
+                .op_sub => {
+                    if (self.peek(0) != .val_number or self.peek(1) != .val_number) {
+                        return self.reportRuntimeError("Operands must be numbers\n", .{});
+                    }
+
+                    const b = self.stack.pop().?.val_number;
+                    const a = self.stack.pop().?.val_number;
+
+                    try self.stack.append(alloc, Value{ .val_number = a - b });
+                },
+                .op_mul => {
+                    if (self.peek(0) != .val_number or self.peek(1) != .val_number) {
+                        return self.reportRuntimeError("Operands must be numbers\n", .{});
+                    }
+
+                    const b = self.stack.pop().?.val_number;
+                    const a = self.stack.pop().?.val_number;
+
+                    try self.stack.append(alloc, Value{ .val_number = a * b });
+                },
+                .op_div => {
+                    if (self.peek(0) != .val_number or self.peek(1) != .val_number) {
+                        return self.reportRuntimeError("Operands must be numbers\n", .{});
+                    }
+
+                    const b = self.stack.pop().?.val_number;
+                    const a = self.stack.pop().?.val_number;
+
+                    try self.stack.append(alloc, Value{ .val_number = a / b });
                 },
                 .op_return => {
                     self.stack.pop().?.print();

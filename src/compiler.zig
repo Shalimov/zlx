@@ -7,6 +7,8 @@ const Value = @import("value.zig").Value;
 const scn = @import("scanner.zig");
 const debug = @import("debug.zig");
 
+const ObjectString = @import("object.zig").ObjectString;
+
 const TokenType = scn.TokenType;
 const Token = scn.Token;
 const Scanner = scn.Scanner;
@@ -41,6 +43,7 @@ const rules = rls: {
     table[@intFromEnum(TokenType.token_dot)] = .{ .prefix = null, .infix = null, .precedence = .ex_call };
     table[@intFromEnum(TokenType.token_minus)] = .{ .prefix = Compiler.unary, .infix = Compiler.binary, .precedence = .ex_term };
     table[@intFromEnum(TokenType.token_plus)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_term };
+    table[@intFromEnum(TokenType.token_plus_plus)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_term };
     table[@intFromEnum(TokenType.token_semicolon)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_slash)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_factor };
     table[@intFromEnum(TokenType.token_star)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_factor };
@@ -53,7 +56,7 @@ const rules = rls: {
     table[@intFromEnum(TokenType.token_less)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_comparison };
     table[@intFromEnum(TokenType.token_less_equal)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_comparison };
     table[@intFromEnum(TokenType.token_identifier)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_string)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@intFromEnum(TokenType.token_string)] = .{ .prefix = Compiler.string, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_number)] = .{ .prefix = Compiler.number, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_true)] = .{ .prefix = Compiler.literal, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_false)] = .{ .prefix = Compiler.literal, .infix = null, .precedence = .ex_none };
@@ -119,6 +122,13 @@ pub const Compiler = struct {
         try current_chunk.writeConstant(alloc, Value{ .val_number = const_value }, self.parser.previous.line);
     }
 
+    fn string(self: *Compiler, alloc: std.mem.Allocator) !void {
+        var current_chunk = self.currentChunk();
+
+        var obj_string = try ObjectString.dupe(alloc, self.parser.previous.str);
+        try current_chunk.writeConstant(alloc, Value{ .val_obj = obj_string.asObject() }, self.parser.previous.line);
+    }
+
     fn grouping(self: *Compiler, alloc: std.mem.Allocator) !void {
         try self.expression(alloc);
         try self.consume(.token_right_paren, "Expect ')' after expression.");
@@ -132,6 +142,7 @@ pub const Compiler = struct {
 
         try switch (op_type) {
             .token_plus => self.emitByte(alloc, @intFromEnum(OpCode.op_add)),
+            .token_plus_plus => self.emitByte(alloc, @intFromEnum(OpCode.op_concat)),
             .token_minus => self.emitByte(alloc, @intFromEnum(OpCode.op_sub)),
             .token_star => self.emitByte(alloc, @intFromEnum(OpCode.op_mul)),
             .token_slash => self.emitByte(alloc, @intFromEnum(OpCode.op_div)),

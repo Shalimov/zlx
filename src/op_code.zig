@@ -9,6 +9,7 @@ pub const OpCode = enum {
     op_less,
     op_greater,
     op_false,
+    op_concat,
     op_add,
     op_sub,
     op_mul,

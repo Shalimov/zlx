@@ -17,6 +17,7 @@ pub const TokenType = enum {
     token_slash,
     token_star,
     // One or two character tokens.
+    token_plus_plus,
     token_bang,
     token_bang_equal,
     token_equal,
@@ -94,10 +95,11 @@ pub const Scanner = struct {
             ';' => self.makeToken(TokenType.token_semicolon),
             ',' => self.makeToken(TokenType.token_comma),
             '.' => self.makeToken(TokenType.token_dot),
-            '+' => self.makeToken(TokenType.token_plus),
+
             '-' => self.makeToken(TokenType.token_minus),
             '*' => self.makeToken(TokenType.token_star),
             '/' => self.makeToken(TokenType.token_slash),
+            '+' => self.makeToken(if (self.match('+')) TokenType.token_plus_plus else TokenType.token_plus),
 
             '<' => self.makeToken(if (self.match('=')) TokenType.token_less_equal else TokenType.token_less),
             '>' => self.makeToken(if (self.match('=')) TokenType.token_greater_equal else TokenType.token_greater),

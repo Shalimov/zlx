@@ -57,6 +57,7 @@ pub fn disassembleInstruction(chunk: *const Chunk, offset: usize) usize {
         .op_equal => return printSimpleInstruction("OP_EQUAL", offset),
         .op_less => return printSimpleInstruction("OP_LESS", offset),
         .op_greater => return printSimpleInstruction("OP_GREATER", offset),
+        .op_concat => return printSimpleInstruction("OP_CONCAT", offset),
         .op_add => return printSimpleInstruction("OP_ADD", offset),
         .op_sub => return printSimpleInstruction("OP_SUB", offset),
         .op_mul => return printSimpleInstruction("OP_MUL", offset),

@@ -1,3 +1,6 @@
+# Internal
+internal-docs/
+
 # Build outputs
 zig-out/
 main

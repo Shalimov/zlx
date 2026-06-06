@@ -68,13 +68,12 @@ pub fn main(init: std.process.Init) !void {
     const aa = init.arena.allocator();
     const arguments = try init.minimal.args.toSlice(aa);
 
-    const gpa = init.gpa;
     var virt: VirtualMachine = .init;
 
     if (arguments.len == 1) {
-        try repl(gpa, init.io, &virt);
+        try repl(aa, init.io, &virt);
     } else if (arguments.len == 2) {
-        try runFile(gpa, init.io, &virt, arguments[1]);
+        try runFile(aa, init.io, &virt, arguments[1]);
     } else {
         try Io.File.stdout().writeStreamingAll(init.io, "Usage: zlx [path]\n");
 

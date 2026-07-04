@@ -3,6 +3,7 @@ const std = @import("std");
 const Chunk = @import("chunk.zig").Chunk;
 const Compiler = @import("compiler.zig").Compiler;
 const OpCode = @import("op_code.zig").OpCode;
+const GcAllocator = @import("gc-allocator.zig").GcAllocator;
 const debug = @import("debug.zig");
 const vm = @import("vm.zig");
 
@@ -66,14 +67,19 @@ fn interpret(alloc: std.mem.Allocator, virt: *VirtualMachine, line: []u8) !void 
 
 pub fn main(init: std.process.Init) !void {
     const aa = init.arena.allocator();
+    var gc = GcAllocator.init(init.gpa);
+    const gc_alloc = gc.allocator();
+
+    defer gc.freeObjects();
+
     const arguments = try init.minimal.args.toSlice(aa);
 
     var virt: VirtualMachine = .init;
 
     if (arguments.len == 1) {
-        try repl(aa, init.io, &virt);
+        try repl(gc_alloc, init.io, &virt);
     } else if (arguments.len == 2) {
-        try runFile(aa, init.io, &virt, arguments[1]);
+        try runFile(gc_alloc, init.io, &virt, arguments[1]);
     } else {
         try Io.File.stdout().writeStreamingAll(init.io, "Usage: zlx [path]\n");
 

@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const GcAllocator = @import("gc-allocator.zig").GcAllocator;
+
 pub const ObjectType = enum(u4) {
     string,
 };
@@ -32,22 +34,20 @@ pub const ObjectString = struct {
     str: []u8,
 
     pub fn concat(alloc: std.mem.Allocator, a: []const u8, b: []const u8) !*ObjectString {
-        const obj_str = try alloc.create(ObjectString);
-        const resulted_str = try alloc.alloc(u8, a.len + b.len);
+        const gc_alloc = GcAllocator.as(alloc);
+        const obj_str = try gc_alloc.createObjectString(a.len + b.len);
 
-        @memcpy(resulted_str[0..a.len], a);
-        @memcpy(resulted_str[a.len..], b);
-
-        obj_str.* = .{ .object = .{ .type = .string }, .str = resulted_str };
+        @memcpy(obj_str.str[0..a.len], a);
+        @memcpy(obj_str.str[a.len..], b);
 
         return obj_str;
     }
 
     pub fn dupe(alloc: std.mem.Allocator, slice: []const u8) !*ObjectString {
-        const obj_str = try alloc.create(ObjectString);
-        const resulted_str = try alloc.dupe(u8, slice[1 .. slice.len - 1]);
+        const gc_alloc = GcAllocator.as(alloc);
+        const obj_str = try gc_alloc.createObjectString(slice.len - 2);
 
-        obj_str.* = .{ .object = .{ .type = .string }, .str = resulted_str };
+        @memcpy(obj_str.str, slice[1 .. slice.len - 1]);
 
         return obj_str;
     }
@@ -57,7 +57,8 @@ pub const ObjectString = struct {
     }
 
     pub fn deinit(self: *ObjectString, alloc: std.mem.Allocator) void {
-        alloc.free(self.str);
-        alloc.destroy(self);
+        const gc_alloc = GcAllocator.as(alloc);
+
+        gc_alloc.destroyObject(self);
     }
 };

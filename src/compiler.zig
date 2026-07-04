@@ -4,14 +4,12 @@ const builtin = @import("builtin");
 const Chunk = @import("chunk.zig").Chunk;
 const OpCode = @import("op_code.zig").OpCode;
 const Value = @import("value.zig").Value;
-const scn = @import("scanner.zig");
+const Scanner = @import("scanner.zig").Scanner;
+const Token = @import("scanner.zig").Token;
+const TokenType = @import("scanner.zig").TokenType;
 const debug = @import("debug.zig");
 
 const ObjectString = @import("object.zig").ObjectString;
-
-const TokenType = scn.TokenType;
-const Token = scn.Token;
-const Scanner = scn.Scanner;
 
 const Precedence = enum {
     ex_none,

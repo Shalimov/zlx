@@ -94,9 +94,9 @@ pub const Compiler = struct {
 
     pub const init: Self = .{ .compiling_chunk = undefined, .scanner = undefined, .parser = .init };
 
-    compiling_chunk: *Chunk,
     scanner: Scanner,
     parser: Parser,
+    compiling_chunk: *Chunk,
 
     pub fn compile(self: *Compiler, alloc: std.mem.Allocator, source: []const u8, chunk: *Chunk) !void {
         self.compiling_chunk = chunk;

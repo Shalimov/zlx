@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const getHash = @import("fnv-hash.zig").getHash;
 const GcAllocator = @import("gc-allocator.zig").GcAllocator;
 
 pub const ObjectType = enum(u4) {
@@ -7,8 +8,8 @@ pub const ObjectType = enum(u4) {
 };
 
 pub const Object = struct {
-    type: ObjectType,
     next: ?*Object = null,
+    type: ObjectType,
 
     pub fn as(self: *Object, comptime T: type) *T {
         return @fieldParentPtr("object", self);
@@ -30,6 +31,7 @@ pub const Object = struct {
 };
 
 pub const ObjectString = struct {
+    hash: u64,
     object: Object,
     str: []u8,
 
@@ -40,6 +42,8 @@ pub const ObjectString = struct {
         @memcpy(obj_str.str[0..a.len], a);
         @memcpy(obj_str.str[a.len..], b);
 
+        obj_str.hash = getHash(obj_str.str);
+
         return obj_str;
     }
 
@@ -48,6 +52,8 @@ pub const ObjectString = struct {
         const obj_str = try gc_alloc.createObjectString(slice.len - 2);
 
         @memcpy(obj_str.str, slice[1 .. slice.len - 1]);
+
+        obj_str.hash = getHash(obj_str.str);
 
         return obj_str;
     }

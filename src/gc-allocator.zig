@@ -27,7 +27,7 @@ pub const GcAllocator = struct {
         const obj_str = try self.inner_allocator.create(ObjectString);
         const resulted_str = try self.inner_allocator.alloc(u8, with_length);
 
-        obj_str.* = .{ .object = .{ .type = .string }, .str = resulted_str };
+        obj_str.* = .{ .hash = 0, .object = .{ .type = .string }, .str = resulted_str };
 
         self.addObjectToPool(&obj_str.object);
 
@@ -47,8 +47,9 @@ pub const GcAllocator = struct {
         }
 
         while (curr) |safe_curr| {
+            const next = safe_curr.next;
             self.destroyObjectInternal(safe_curr);
-            curr = safe_curr.next;
+            curr = next;
         }
     }
 

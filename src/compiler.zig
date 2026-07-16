@@ -4,10 +4,12 @@ const builtin = @import("builtin");
 const Chunk = @import("chunk.zig").Chunk;
 const OpCode = @import("op_code.zig").OpCode;
 const Value = @import("value.zig").Value;
-const Scanner = @import("scanner.zig").Scanner;
-const Token = @import("scanner.zig").Token;
-const TokenType = @import("scanner.zig").TokenType;
 const debug = @import("debug.zig");
+const scn = @import("scanner.zig");
+
+const Scanner = scn.Scanner;
+const Token = scn.Token;
+const TokenType = scn.TokenType;
 
 const ObjectString = @import("object.zig").ObjectString;
 

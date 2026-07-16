@@ -1,7 +1,9 @@
 const std = @import("std");
 
-const Object = @import("object.zig").Object;
-const ObjectString = @import("object.zig").ObjectString;
+const objects = @import("object.zig");
+
+const Object = objects.Object;
+const ObjectString = objects.ObjectString;
 
 pub const Value = union(enum) {
     pub const with_nil: @This() = .val_nil;

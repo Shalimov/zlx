@@ -1,16 +1,19 @@
 const std = @import("std");
 
 const objects = @import("object.zig");
+const HashTable = @import("hash-table.zig").HashTable;
+const getHash = @import("fnv-hash.zig").getHash;
 
 const Object = objects.Object;
 const ObjectString = objects.ObjectString;
 
 pub const GcAllocator = struct {
+    internalized_strings: HashTable,
     inner_allocator: std.mem.Allocator,
     object_pool: ?*Object,
 
-    pub fn init(inner_alloc: std.mem.Allocator) GcAllocator {
-        return .{ .inner_allocator = inner_alloc, .object_pool = null };
+    pub fn prepare(inner_alloc: std.mem.Allocator) !GcAllocator {
+        return .{ .internalized_strings = try .init(inner_alloc), .inner_allocator = inner_alloc, .object_pool = null };
     }
 
     pub fn allocator(self: *GcAllocator) std.mem.Allocator {
@@ -25,20 +28,52 @@ pub const GcAllocator = struct {
         };
     }
 
-    pub fn createObjectString(self: *GcAllocator, with_length: usize) !*ObjectString {
-        const obj_str = try self.inner_allocator.create(ObjectString);
-        const resulted_str = try self.inner_allocator.alloc(u8, with_length);
+    pub fn concatFromSlices(self: *GcAllocator, a: []const u8, b: []const u8) !*ObjectString {
+        const concat_str = try self.inner_allocator.alloc(u8, a.len + b.len);
 
-        obj_str.* = .{ .hash = 0, .object = .{ .type = .string }, .str = resulted_str };
+        @memcpy(concat_str[0..a.len], a);
+        @memcpy(concat_str[a.len..], b);
 
-        self.addObjectToPool(&obj_str.object);
+        const hash = getHash(concat_str);
 
-        return obj_str;
+        if (self.internalized_strings.findKey(hash, concat_str)) |internalized| {
+            self.inner_allocator.free(concat_str);
+
+            return internalized;
+        }
+
+        const obj_string = try self.createObjectString();
+
+        obj_string.hash = hash;
+        obj_string.str = concat_str;
+
+        try self.internalized_strings.insert(self.inner_allocator, obj_string, .val_nil);
+
+        return obj_string;
+    }
+
+    pub fn dupeFromSlice(self: *GcAllocator, a: []const u8) !*ObjectString {
+        const dupe_str = try self.inner_allocator.alloc(u8, a.len);
+        @memcpy(dupe_str[0..a.len], a);
+
+        const hash = getHash(dupe_str);
+
+        if (self.internalized_strings.findKey(hash, dupe_str)) |internalized| {
+            return internalized;
+        }
+
+        const obj_string = try self.createObjectString(a.len);
+        obj_string.hash = hash;
+        obj_string.str = dupe_str;
+
+        self.internalized_strings.insert(self, obj_string, .val_nil);
+
+        return obj_string;
     }
 
     pub fn destroyObject(self: *GcAllocator, obj: *Object) void {
         self.removeFromObjectPool(obj);
-        self.destroyObject(destroyObjectInternal);
+        self.destroyObjectInternal(obj);
     }
 
     pub fn freeObjects(self: *GcAllocator) void {
@@ -57,6 +92,21 @@ pub const GcAllocator = struct {
 
     pub fn as(target_alloc: std.mem.Allocator) *GcAllocator {
         return @ptrCast(@alignCast(target_alloc.ptr));
+    }
+
+    pub fn deinit(self: *GcAllocator) void {
+        self.internalized_strings.deinit(self.inner_allocator);
+        self.freeObjects();
+    }
+
+    fn createObjectString(self: *GcAllocator) !*ObjectString {
+        const obj_str = try self.inner_allocator.create(ObjectString);
+
+        obj_str.* = .{ .hash = 0, .object = .{ .type = .string }, .str = undefined };
+
+        self.addObjectToPool(&obj_str.object);
+
+        return obj_str;
     }
 
     fn addObjectToPool(self: *GcAllocator, obj: *Object) void {

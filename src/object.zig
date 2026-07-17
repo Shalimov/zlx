@@ -37,25 +37,14 @@ pub const ObjectString = struct {
 
     pub fn concat(alloc: std.mem.Allocator, a: []const u8, b: []const u8) !*ObjectString {
         const gc_alloc = GcAllocator.as(alloc);
-        const obj_str = try gc_alloc.createObjectString(a.len + b.len);
 
-        @memcpy(obj_str.str[0..a.len], a);
-        @memcpy(obj_str.str[a.len..], b);
-
-        obj_str.hash = getHash(obj_str.str);
-
-        return obj_str;
+        return gc_alloc.concatFromSlices(a, b);
     }
 
     pub fn dupe(alloc: std.mem.Allocator, slice: []const u8) !*ObjectString {
         const gc_alloc = GcAllocator.as(alloc);
-        const obj_str = try gc_alloc.createObjectString(slice.len - 2);
 
-        @memcpy(obj_str.str, slice[1 .. slice.len - 1]);
-
-        obj_str.hash = getHash(obj_str.str);
-
-        return obj_str;
+        return gc_alloc.dupeFromSlice(slice);
     }
 
     pub fn asObject(self: *ObjectString) *Object {

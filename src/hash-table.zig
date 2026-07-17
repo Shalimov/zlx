@@ -54,6 +54,8 @@ pub const HashTable = struct {
         var target_index = start_idx;
         var next_count = self.count;
 
+        // Note that comparison here k == key, where both are *ObjectString
+        // Is based on an assumption that all strings are internalized
         for (0..self.capacity) |idx| {
             const curr_idx = (start_idx + idx) & trailing_capacity;
             const curr_key = self.keys[curr_idx];
@@ -61,7 +63,7 @@ pub const HashTable = struct {
             if (curr_key) |k| {
                 if (k == tombstone_ref and first_tombstone_index == self.capacity) {
                     first_tombstone_index = curr_idx;
-                } else if (k != tombstone_ref and equalKeys(key, k)) {
+                } else if (k != tombstone_ref and k == key) {
                     first_tombstone_index = self.capacity;
                     target_index = curr_idx;
                     break;
@@ -139,7 +141,11 @@ pub const HashTable = struct {
             const curr_idx = (start_idx + idx) & trailing_capacity;
 
             if (self.keys[curr_idx]) |curr_key| {
-                if (curr_key != tombstone_ref and hash == curr_key.hash and std.mem.eql(u8, key_str, curr_key.str)) {
+                if (curr_key != tombstone_ref and
+                    key_str.len == curr_key.str.len and
+                    hash == curr_key.hash and
+                    std.mem.eql(u8, key_str, curr_key.str))
+                {
                     return curr_idx;
                 }
             } else {
@@ -198,10 +204,6 @@ pub const HashTable = struct {
         return true;
     }
 
-    inline fn equalKeys(key1: *ObjectString, key2: *ObjectString) bool {
-        return key1.hash == key2.hash and std.mem.eql(u8, key1.str, key2.str);
-    }
-
     fn allocUnitedMemoryRegion(alloc: std.mem.Allocator, capacity: usize) HashTableError!struct { keys: [*]?*ObjectString, values: [*]Value } {
         const keys_size = capacity * @sizeOf(?*ObjectString);
         const values_size = capacity * @sizeOf(Value);
@@ -242,6 +244,7 @@ fn findCollidingKeys(alloc: std.mem.Allocator, table: *HashTable) ![2]*ObjectStr
     var key2: ?*ObjectString = null;
     var i: usize = 0;
     var buf: [16]u8 = undefined;
+
     while (key1 == null or key2 == null) : (i += 1) {
         const name = try std.fmt.bufPrint(&buf, "k_{d}", .{i});
         const k = try makeString(alloc, name);
@@ -259,9 +262,9 @@ fn findCollidingKeys(alloc: std.mem.Allocator, table: *HashTable) ![2]*ObjectStr
 
 test "init starts with zero count" {
     const testing = std.testing;
-    var gc = GcAllocator.init(testing.allocator);
+    var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
-    defer gc.freeObjects();
+    defer gc.deinit();
 
     var table = try HashTable.init(alloc);
     defer table.deinit(alloc);
@@ -271,9 +274,9 @@ test "init starts with zero count" {
 
 test "initWithCap creates an empty table with the requested capacity" {
     const testing = std.testing;
-    var gc = GcAllocator.init(testing.allocator);
+    var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
-    defer gc.freeObjects();
+    defer gc.deinit();
 
     var table = try HashTable.initWithCap(alloc, 2);
     defer table.deinit(alloc);
@@ -284,9 +287,9 @@ test "initWithCap creates an empty table with the requested capacity" {
 
 test "insert stores value for a new key" {
     const testing = std.testing;
-    var gc = GcAllocator.init(testing.allocator);
+    var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
-    defer gc.freeObjects();
+    defer gc.deinit();
 
     var table = try HashTable.init(alloc);
     defer table.deinit(alloc);
@@ -303,9 +306,9 @@ test "insert stores value for a new key" {
 
 test "insert increments count for a new key" {
     const testing = std.testing;
-    var gc = GcAllocator.init(testing.allocator);
+    var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
-    defer gc.freeObjects();
+    defer gc.deinit();
 
     var table = try HashTable.init(alloc);
     defer table.deinit(alloc);
@@ -319,9 +322,9 @@ test "insert increments count for a new key" {
 
 test "insert updates value for an existing key" {
     const testing = std.testing;
-    var gc = GcAllocator.init(testing.allocator);
+    var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
-    defer gc.freeObjects();
+    defer gc.deinit();
 
     var table = try HashTable.init(alloc);
     defer table.deinit(alloc);
@@ -340,9 +343,9 @@ test "insert updates value for an existing key" {
 
 test "insert does not change count when updating an existing key" {
     const testing = std.testing;
-    var gc = GcAllocator.init(testing.allocator);
+    var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
-    defer gc.freeObjects();
+    defer gc.deinit();
 
     var table = try HashTable.init(alloc);
     defer table.deinit(alloc);
@@ -357,9 +360,9 @@ test "insert does not change count when updating an existing key" {
 
 test "find value returns null for a missing key" {
     const testing = std.testing;
-    var gc = GcAllocator.init(testing.allocator);
+    var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
-    defer gc.freeObjects();
+    defer gc.deinit();
 
     var table = try HashTable.init(alloc);
     defer table.deinit(alloc);
@@ -373,9 +376,9 @@ test "find value returns null for a missing key" {
 
 test "find value retrieves value by content using a different object string" {
     const testing = std.testing;
-    var gc = GcAllocator.init(testing.allocator);
+    var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
-    defer gc.freeObjects();
+    defer gc.deinit();
 
     var table = try HashTable.init(alloc);
     defer table.deinit(alloc);
@@ -393,9 +396,9 @@ test "find value retrieves value by content using a different object string" {
 
 test "remove makes a key unretrievable" {
     const testing = std.testing;
-    var gc = GcAllocator.init(testing.allocator);
+    var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
-    defer gc.freeObjects();
+    defer gc.deinit();
 
     var table = try HashTable.init(alloc);
     defer table.deinit(alloc);
@@ -410,9 +413,9 @@ test "remove makes a key unretrievable" {
 
 test "remove decrements count" {
     const testing = std.testing;
-    var gc = GcAllocator.init(testing.allocator);
+    var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
-    defer gc.freeObjects();
+    defer gc.deinit();
 
     var table = try HashTable.init(alloc);
     defer table.deinit(alloc);
@@ -427,9 +430,9 @@ test "remove decrements count" {
 
 test "remove on a missing key is a no-op" {
     const testing = std.testing;
-    var gc = GcAllocator.init(testing.allocator);
+    var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
-    defer gc.freeObjects();
+    defer gc.deinit();
 
     var table = try HashTable.init(alloc);
     defer table.deinit(alloc);
@@ -443,9 +446,9 @@ test "remove on a missing key is a no-op" {
 
 test "remove on an already removed key is idempotent" {
     const testing = std.testing;
-    var gc = GcAllocator.init(testing.allocator);
+    var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
-    defer gc.freeObjects();
+    defer gc.deinit();
 
     var table = try HashTable.init(alloc);
     defer table.deinit(alloc);
@@ -462,9 +465,9 @@ test "remove on an already removed key is idempotent" {
 
 test "insert restores a removed key" {
     const testing = std.testing;
-    var gc = GcAllocator.init(testing.allocator);
+    var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
-    defer gc.freeObjects();
+    defer gc.deinit();
 
     var table = try HashTable.init(alloc);
     defer table.deinit(alloc);
@@ -483,9 +486,9 @@ test "insert restores a removed key" {
 
 test "insert restores count after reinserting a removed key" {
     const testing = std.testing;
-    var gc = GcAllocator.init(testing.allocator);
+    var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
-    defer gc.freeObjects();
+    defer gc.deinit();
 
     var table = try HashTable.init(alloc);
     defer table.deinit(alloc);
@@ -501,9 +504,9 @@ test "insert restores count after reinserting a removed key" {
 
 test "insert grows capacity when load factor is exceeded" {
     const testing = std.testing;
-    var gc = GcAllocator.init(testing.allocator);
+    var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
-    defer gc.freeObjects();
+    defer gc.deinit();
 
     var table = try HashTable.init(alloc);
     defer table.deinit(alloc);
@@ -521,9 +524,9 @@ test "insert grows capacity when load factor is exceeded" {
 
 test "insert preserves all entries after many insertions" {
     const testing = std.testing;
-    var gc = GcAllocator.init(testing.allocator);
+    var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
-    defer gc.freeObjects();
+    defer gc.deinit();
 
     var table = try HashTable.init(alloc);
     defer table.deinit(alloc);
@@ -548,9 +551,9 @@ test "insert preserves all entries after many insertions" {
 
 test "insert at minimum capacity preserves all entries" {
     const testing = std.testing;
-    var gc = GcAllocator.init(testing.allocator);
+    var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
-    defer gc.freeObjects();
+    defer gc.deinit();
 
     var table = try HashTable.initWithCap(alloc, 2);
     defer table.deinit(alloc);
@@ -571,9 +574,9 @@ test "insert at minimum capacity preserves all entries" {
 
 test "lookup finds colliding keys past a tombstone" {
     const testing = std.testing;
-    var gc = GcAllocator.init(testing.allocator);
+    var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
-    defer gc.freeObjects();
+    defer gc.deinit();
 
     var table = try HashTable.init(alloc);
     defer table.deinit(alloc);
@@ -594,9 +597,9 @@ test "lookup finds colliding keys past a tombstone" {
 
 test "find key returns the interned key for matching content" {
     const testing = std.testing;
-    var gc = GcAllocator.init(testing.allocator);
+    var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
-    defer gc.freeObjects();
+    defer gc.deinit();
 
     var table = try HashTable.init(alloc);
     defer table.deinit(alloc);
@@ -615,9 +618,9 @@ test "find key returns the interned key for matching content" {
 
 test "find key returns null for non-matching content" {
     const testing = std.testing;
-    var gc = GcAllocator.init(testing.allocator);
+    var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
-    defer gc.freeObjects();
+    defer gc.deinit();
 
     var table = try HashTable.init(alloc);
     defer table.deinit(alloc);
@@ -633,9 +636,9 @@ test "find key returns null for non-matching content" {
 
 test "find key returns null for an empty table" {
     const testing = std.testing;
-    var gc = GcAllocator.init(testing.allocator);
+    var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
-    defer gc.freeObjects();
+    defer gc.deinit();
 
     var table = try HashTable.init(alloc);
     defer table.deinit(alloc);

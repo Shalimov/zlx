@@ -67,7 +67,7 @@ fn interpret(alloc: std.mem.Allocator, virt: *VirtualMachine, line: []u8) !void 
 
 pub fn main(init: std.process.Init) !void {
     const aa = init.arena.allocator();
-    var gc = GcAllocator.init(init.gpa);
+    var gc = GcAllocator.setup(init.gpa);
     const gc_alloc = gc.allocator();
 
     defer gc.freeObjects();

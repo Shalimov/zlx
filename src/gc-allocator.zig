@@ -59,14 +59,16 @@ pub const GcAllocator = struct {
         const hash = getHash(dupe_str);
 
         if (self.internalized_strings.findKey(hash, dupe_str)) |internalized| {
+            self.inner_allocator.free(dupe_str);
+
             return internalized;
         }
 
-        const obj_string = try self.createObjectString(a.len);
+        const obj_string = try self.createObjectString();
         obj_string.hash = hash;
         obj_string.str = dupe_str;
 
-        self.internalized_strings.insert(self, obj_string, .val_nil);
+        try self.internalized_strings.insert(self.inner_allocator, obj_string, .val_nil);
 
         return obj_string;
     }

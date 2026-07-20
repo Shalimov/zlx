@@ -6,6 +6,7 @@ const GcAllocator = @import("gc-allocator.zig").GcAllocator;
 const getHash = @import("fnv-hash.zig").getHash;
 
 const Alignment = std.mem.Alignment;
+const testing = std.testing;
 
 var tombstone: ObjectString = .{
     .hash = 0,
@@ -13,19 +14,25 @@ var tombstone: ObjectString = .{
     .str = &[_]u8{},
 };
 
+var empty: ObjectString = .{
+    .hash = 0,
+    .object = .{ .type = .string },
+    .str = &[_]u8{},
+};
+
 const tombstone_ref: *ObjectString = &tombstone;
+const empty_ref: *ObjectString = &empty;
+
 const n_basis: usize = 16;
-const united_memory_region_alignment = Alignment.max(Alignment.of(?*ObjectString), Alignment.of(Value));
+const united_memory_region_alignment = Alignment.max(Alignment.of(*ObjectString), Alignment.of(Value));
 
 pub const HashTable = struct {
     const HashTableError = error{RespaceFailure};
 
-    const Entry = struct { key: ?*ObjectString, value: Value };
-
     capacity: usize,
     count: usize,
     tombstone_count: usize,
-    keys: [*]?*ObjectString,
+    keys: [*]*ObjectString,
     values: [*]Value,
 
     pub fn init(alloc: std.mem.Allocator) !HashTable {
@@ -60,10 +67,10 @@ pub const HashTable = struct {
             const curr_idx = (start_idx + idx) & trailing_capacity;
             const curr_key = self.keys[curr_idx];
 
-            if (curr_key) |k| {
-                if (k == tombstone_ref and first_tombstone_index == self.capacity) {
+            if (curr_key != empty_ref) {
+                if (curr_key == tombstone_ref and first_tombstone_index == self.capacity) {
                     first_tombstone_index = curr_idx;
-                } else if (k != tombstone_ref and k == key) {
+                } else if (curr_key != tombstone_ref and curr_key == key) {
                     first_tombstone_index = self.capacity;
                     target_index = curr_idx;
                     break;
@@ -84,7 +91,7 @@ pub const HashTable = struct {
                 const curr_idx = (start_idx + idx) & trailing_capacity;
                 const curr_key = self.keys[curr_idx];
 
-                if (curr_key == null) {
+                if (curr_key == empty_ref) {
                     target_index = curr_idx;
                     break;
                 }
@@ -125,6 +132,17 @@ pub const HashTable = struct {
         }
     }
 
+    pub fn shrink(self: *HashTable, alloc: std.mem.Allocator) HashTableError!void {
+        if (@as(f64, @floatFromInt(self.count)) / @as(f64, @floatFromInt(self.capacity)) > 0.125 or self.capacity <= 2) {
+            return;
+        }
+
+        // Table might grow and shrink like a spring
+        // Depending on this it might be more efficient NOT TO USE "Smart" capacity measurment
+        // and just let it decrease only by half (decided to stick to this trade-off)
+        try self.forceRespace(alloc, self.capacity >> 1);
+    }
+
     pub fn deinit(self: *HashTable, alloc: std.mem.Allocator) void {
         freeUnitedMemoryRegion(alloc, self.capacity, self.keys);
 
@@ -139,8 +157,9 @@ pub const HashTable = struct {
 
         for (0..self.capacity) |idx| {
             const curr_idx = (start_idx + idx) & trailing_capacity;
+            const curr_key = self.keys[curr_idx];
 
-            if (self.keys[curr_idx]) |curr_key| {
+            if (curr_key != empty_ref) {
                 if (curr_key != tombstone_ref and
                     key_str.len == curr_key.str.len and
                     hash == curr_key.hash and
@@ -164,8 +183,13 @@ pub const HashTable = struct {
             return false;
         }
 
+        try self.forceRespace(alloc, self.capacity << 1);
+
+        return true;
+    }
+
+    fn forceRespace(self: *HashTable, alloc: std.mem.Allocator, new_capacity: usize) HashTableError!void {
         var new_count: usize = 0;
-        const new_capacity = self.capacity << 1;
         const allocated = try allocUnitedMemoryRegion(alloc, new_capacity);
 
         const keys_ptr = allocated.keys;
@@ -174,21 +198,19 @@ pub const HashTable = struct {
         const new_trailing_capacity = new_capacity - 1;
 
         for (self.keys[0..self.capacity], 0..) |key, k_idx| {
-            if (key) |existing_key| {
-                if (existing_key == tombstone_ref) continue;
+            if (key == empty_ref or key == tombstone_ref) continue;
 
-                const start_idx = existing_key.hash & new_trailing_capacity;
+            const start_idx = key.hash & new_trailing_capacity;
 
-                for (0..new_capacity) |idx| {
-                    const corrected_idx = (start_idx + idx) & new_trailing_capacity;
+            for (0..new_capacity) |idx| {
+                const corrected_idx = (start_idx + idx) & new_trailing_capacity;
 
-                    if (keys_ptr[corrected_idx] == null) {
-                        keys_ptr[corrected_idx] = key;
-                        values_ptr[corrected_idx] = self.values[k_idx];
-                        new_count += 1;
+                if (keys_ptr[corrected_idx] == empty_ref) {
+                    keys_ptr[corrected_idx] = key;
+                    values_ptr[corrected_idx] = self.values[k_idx];
+                    new_count += 1;
 
-                        break;
-                    }
+                    break;
                 }
             }
         }
@@ -200,12 +222,10 @@ pub const HashTable = struct {
         self.count = new_count;
         self.tombstone_count = 0;
         self.capacity = new_capacity;
-
-        return true;
     }
 
-    fn allocUnitedMemoryRegion(alloc: std.mem.Allocator, capacity: usize) HashTableError!struct { keys: [*]?*ObjectString, values: [*]Value } {
-        const keys_size = capacity * @sizeOf(?*ObjectString);
+    fn allocUnitedMemoryRegion(alloc: std.mem.Allocator, capacity: usize) HashTableError!struct { keys: [*]*ObjectString, values: [*]Value } {
+        const keys_size = capacity * @sizeOf(*ObjectString);
         const values_size = capacity * @sizeOf(Value);
         const padded_keys_size = Alignment.of(Value).forward(keys_size);
 
@@ -215,16 +235,16 @@ pub const HashTable = struct {
             padded_keys_size + values_size,
         ) catch return HashTableError.RespaceFailure;
 
-        const keys_ptr: [*]?*ObjectString = @ptrCast(@alignCast(keys_values_region.ptr));
-        @memset(keys_ptr[0..capacity], null);
+        const keys_ptr: [*]*ObjectString = @ptrCast(@alignCast(keys_values_region.ptr));
+        @memset(keys_ptr[0..capacity], empty_ref);
 
         const values_ptr: [*]Value = @ptrCast(@alignCast(keys_values_region.ptr + padded_keys_size));
 
         return .{ .keys = keys_ptr, .values = values_ptr };
     }
 
-    fn freeUnitedMemoryRegion(alloc: std.mem.Allocator, capacity: usize, keys: [*]?*ObjectString) void {
-        const keys_size = capacity * @sizeOf(?*ObjectString);
+    fn freeUnitedMemoryRegion(alloc: std.mem.Allocator, capacity: usize, keys: [*]*ObjectString) void {
+        const keys_size = capacity * @sizeOf(*ObjectString);
         const values_size = capacity * @sizeOf(Value);
         const padded_keys_size = Alignment.of(Value).forward(keys_size);
         const key_value_region_size = padded_keys_size + values_size;
@@ -236,32 +256,31 @@ pub const HashTable = struct {
 };
 
 inline fn makeString(alloc: std.mem.Allocator, bytes: []const u8) !*ObjectString {
-    return try ObjectString.concat(alloc, bytes, "");
+    return try ObjectString.dupe(alloc, bytes);
 }
 
 fn findCollidingKeys(alloc: std.mem.Allocator, table: *HashTable) ![2]*ObjectString {
-    var key1: ?*ObjectString = null;
-    var key2: ?*ObjectString = null;
+    var key1: *ObjectString = empty_ref;
+    var key2: *ObjectString = empty_ref;
     var i: usize = 0;
     var buf: [16]u8 = undefined;
 
-    while (key1 == null or key2 == null) : (i += 1) {
+    while (key1 == empty_ref or key2 == empty_ref) : (i += 1) {
         const name = try std.fmt.bufPrint(&buf, "k_{d}", .{i});
         const k = try makeString(alloc, name);
         const idx = k.hash % table.capacity;
         if (idx == 0) {
-            if (key1 == null) {
+            if (key1 == empty_ref) {
                 key1 = k;
-            } else if (key2 == null) {
+            } else if (key2 == empty_ref) {
                 key2 = k;
             }
         }
     }
-    return .{ key1.?, key2.? };
+    return .{ key1, key2 };
 }
 
 test "init starts with zero count" {
-    const testing = std.testing;
     var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
     defer gc.deinit();
@@ -273,7 +292,6 @@ test "init starts with zero count" {
 }
 
 test "initWithCap creates an empty table with the requested capacity" {
-    const testing = std.testing;
     var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
     defer gc.deinit();
@@ -286,7 +304,6 @@ test "initWithCap creates an empty table with the requested capacity" {
 }
 
 test "insert stores value for a new key" {
-    const testing = std.testing;
     var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
     defer gc.deinit();
@@ -305,7 +322,6 @@ test "insert stores value for a new key" {
 }
 
 test "insert increments count for a new key" {
-    const testing = std.testing;
     var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
     defer gc.deinit();
@@ -321,7 +337,6 @@ test "insert increments count for a new key" {
 }
 
 test "insert updates value for an existing key" {
-    const testing = std.testing;
     var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
     defer gc.deinit();
@@ -342,7 +357,6 @@ test "insert updates value for an existing key" {
 }
 
 test "insert does not change count when updating an existing key" {
-    const testing = std.testing;
     var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
     defer gc.deinit();
@@ -359,7 +373,6 @@ test "insert does not change count when updating an existing key" {
 }
 
 test "find value returns null for a missing key" {
-    const testing = std.testing;
     var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
     defer gc.deinit();
@@ -375,7 +388,6 @@ test "find value returns null for a missing key" {
 }
 
 test "find value retrieves value by content using a different object string" {
-    const testing = std.testing;
     var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
     defer gc.deinit();
@@ -395,7 +407,6 @@ test "find value retrieves value by content using a different object string" {
 }
 
 test "remove makes a key unretrievable" {
-    const testing = std.testing;
     var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
     defer gc.deinit();
@@ -412,7 +423,6 @@ test "remove makes a key unretrievable" {
 }
 
 test "remove decrements count" {
-    const testing = std.testing;
     var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
     defer gc.deinit();
@@ -429,7 +439,6 @@ test "remove decrements count" {
 }
 
 test "remove on a missing key is a no-op" {
-    const testing = std.testing;
     var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
     defer gc.deinit();
@@ -445,7 +454,6 @@ test "remove on a missing key is a no-op" {
 }
 
 test "remove on an already removed key is idempotent" {
-    const testing = std.testing;
     var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
     defer gc.deinit();
@@ -464,7 +472,6 @@ test "remove on an already removed key is idempotent" {
 }
 
 test "insert restores a removed key" {
-    const testing = std.testing;
     var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
     defer gc.deinit();
@@ -485,7 +492,6 @@ test "insert restores a removed key" {
 }
 
 test "insert restores count after reinserting a removed key" {
-    const testing = std.testing;
     var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
     defer gc.deinit();
@@ -503,12 +509,12 @@ test "insert restores count after reinserting a removed key" {
 }
 
 test "insert grows capacity when load factor is exceeded" {
-    const testing = std.testing;
     var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
     defer gc.deinit();
 
     var table = try HashTable.init(alloc);
+    const actual_capacity = table.capacity;
     defer table.deinit(alloc);
 
     const num_elements = 13;
@@ -519,11 +525,10 @@ test "insert grows capacity when load factor is exceeded" {
         try table.insert(alloc, key, Value{ .val_number = @floatFromInt(i) });
     }
 
-    try testing.expect(table.capacity > 16);
+    try testing.expect(table.capacity > actual_capacity);
 }
 
 test "insert preserves all entries after many insertions" {
-    const testing = std.testing;
     var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
     defer gc.deinit();
@@ -550,7 +555,6 @@ test "insert preserves all entries after many insertions" {
 }
 
 test "insert at minimum capacity preserves all entries" {
-    const testing = std.testing;
     var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
     defer gc.deinit();
@@ -573,7 +577,6 @@ test "insert at minimum capacity preserves all entries" {
 }
 
 test "lookup finds colliding keys past a tombstone" {
-    const testing = std.testing;
     var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
     defer gc.deinit();
@@ -596,7 +599,6 @@ test "lookup finds colliding keys past a tombstone" {
 }
 
 test "find key returns the interned key for matching content" {
-    const testing = std.testing;
     var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
     defer gc.deinit();
@@ -617,7 +619,6 @@ test "find key returns the interned key for matching content" {
 }
 
 test "find key returns null for non-matching content" {
-    const testing = std.testing;
     var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
     defer gc.deinit();
@@ -635,7 +636,6 @@ test "find key returns null for non-matching content" {
 }
 
 test "find key returns null for an empty table" {
-    const testing = std.testing;
     var gc = try GcAllocator.prepare(testing.allocator);
     const alloc = gc.allocator();
     defer gc.deinit();
@@ -647,4 +647,62 @@ test "find key returns null for an empty table" {
     const probe = probe_buf[0..];
 
     try testing.expect(table.findKey(getHash(probe), probe) == null);
+}
+
+test "manual shrink release space when shrink factor is achieved" {
+    // Arrange
+    var gc = try GcAllocator.prepare(testing.allocator);
+    const alloc = gc.allocator();
+    defer gc.deinit();
+
+    var table = try HashTable.initWithCap(alloc, 4);
+    const initial_cap = table.capacity;
+    defer table.deinit(alloc);
+
+    const key1 = try makeString(alloc, "shared_content_1");
+    const key2 = try makeString(alloc, "shared_content_2");
+    const key3 = try makeString(alloc, "shared_content_3");
+    const key4 = try makeString(alloc, "shared_content_4");
+
+    try table.insert(alloc, key1, .with_false);
+    try table.insert(alloc, key2, .with_true);
+    try table.insert(alloc, key3, .with_nil);
+    try table.insert(alloc, key4, .with_false);
+
+    const upgraded_cap = table.capacity;
+
+    table.remove(key1);
+    table.remove(key2);
+    table.remove(key4);
+    table.remove(key3);
+
+    // Act
+    try table.shrink(alloc);
+
+    // Assert
+    const actual_cap = table.capacity;
+
+    try testing.expect(upgraded_cap > initial_cap);
+    try testing.expectEqual(8, upgraded_cap);
+    try testing.expect(upgraded_cap > actual_cap);
+    try testing.expectEqual(4, actual_cap);
+}
+
+test "manual shrink can rearrange space when at the bottom limits" {
+    // Arrange
+    var gc = try GcAllocator.prepare(testing.allocator);
+    const alloc = gc.allocator();
+    defer gc.deinit();
+
+    var table = try HashTable.initWithCap(alloc, 4);
+    defer table.deinit(alloc);
+
+    // Act
+    try table.shrink(alloc); // 2
+    try table.shrink(alloc); // 2
+    try table.shrink(alloc); // 2
+
+    // Assert
+
+    try testing.expectEqual(2, table.capacity);
 }

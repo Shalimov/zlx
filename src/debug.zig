@@ -47,21 +47,23 @@ pub fn disassembleInstruction(chunk: *const Chunk, offset: usize) usize {
 
     const instruction: OpCode = @enumFromInt(chunk.code.items[offset]);
 
-    switch (instruction) {
-        .op_constant, .op_constant_long => return printConstInstruction(chunk, offset),
-        .op_not => return printSimpleInstruction("OP_NOT", offset),
-        .op_negate => return printSimpleInstruction("OP_NEGATE", offset),
-        .op_nil => return printSimpleInstruction("OP_NIL", offset),
-        .op_true => return printSimpleInstruction("OP_TRUE", offset),
-        .op_false => return printSimpleInstruction("OP_FALSE", offset),
-        .op_equal => return printSimpleInstruction("OP_EQUAL", offset),
-        .op_less => return printSimpleInstruction("OP_LESS", offset),
-        .op_greater => return printSimpleInstruction("OP_GREATER", offset),
-        .op_concat => return printSimpleInstruction("OP_CONCAT", offset),
-        .op_add => return printSimpleInstruction("OP_ADD", offset),
-        .op_sub => return printSimpleInstruction("OP_SUB", offset),
-        .op_mul => return printSimpleInstruction("OP_MUL", offset),
-        .op_div => return printSimpleInstruction("OP_DIV", offset),
-        .op_return => return printSimpleInstruction("OP_RETURN", offset),
-    }
+    return switch (instruction) {
+        .op_constant, .op_constant_long => printConstInstruction(chunk, offset),
+        .op_not => printSimpleInstruction("OP_NOT", offset),
+        .op_negate => printSimpleInstruction("OP_NEGATE", offset),
+        .op_nil => printSimpleInstruction("OP_NIL", offset),
+        .op_true => printSimpleInstruction("OP_TRUE", offset),
+        .op_false => printSimpleInstruction("OP_FALSE", offset),
+        .op_equal => printSimpleInstruction("OP_EQUAL", offset),
+        .op_less => printSimpleInstruction("OP_LESS", offset),
+        .op_greater => printSimpleInstruction("OP_GREATER", offset),
+        .op_concat => printSimpleInstruction("OP_CONCAT", offset),
+        .op_add => printSimpleInstruction("OP_ADD", offset),
+        .op_sub => printSimpleInstruction("OP_SUB", offset),
+        .op_mul => printSimpleInstruction("OP_MUL", offset),
+        .op_div => printSimpleInstruction("OP_DIV", offset),
+        .op_print => printSimpleInstruction("OP_PRINT", offset),
+        .op_pop => printSimpleInstruction("OP_POP", offset),
+        .op_return => printSimpleInstruction("OP_RETURN", offset),
+    };
 }

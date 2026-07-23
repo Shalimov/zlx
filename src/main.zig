@@ -44,7 +44,7 @@ fn repl(alloc: std.mem.Allocator, io: Io, virt: *VirtualMachine) !void {
             break;
         }
 
-        _ = try interpret(alloc, virt, line);
+        try interpret(alloc, virt, line);
 
         try writer.print("[script]> ", .{});
         try writer.flush();
@@ -58,7 +58,7 @@ fn runFile(alloc: std.mem.Allocator, io: Io, virt: *VirtualMachine, path: [:0]co
     const script = try Io.Dir.readFileAlloc(cwd, io, path, alloc, Io.Limit.limited(65_536));
     defer alloc.free(script);
 
-    _ = try interpret(alloc, virt, script);
+    try interpret(alloc, virt, script);
 }
 
 fn interpret(alloc: std.mem.Allocator, virt: *VirtualMachine, line: []u8) !void {
@@ -67,10 +67,10 @@ fn interpret(alloc: std.mem.Allocator, virt: *VirtualMachine, line: []u8) !void 
 
 pub fn main(init: std.process.Init) !void {
     const aa = init.arena.allocator();
-    var gc = GcAllocator.setup(init.gpa);
+    var gc = try GcAllocator.prepare(init.gpa);
     const gc_alloc = gc.allocator();
 
-    defer gc.freeObjects();
+    defer gc.deinit();
 
     const arguments = try init.minimal.args.toSlice(aa);
 

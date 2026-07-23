@@ -15,4 +15,8 @@ pub const OpCode = enum {
     op_mul,
     op_div,
     op_return,
+    // debugging
+    op_print,
+    // Special cases
+    op_pop,
 };

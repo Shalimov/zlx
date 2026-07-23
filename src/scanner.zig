@@ -47,12 +47,11 @@ pub const TokenType = enum {
     token_var,
     token_nil,
     token_print,
-    // Aux
-    // Comment: 2026 May 03
-    // In Zig we can handle this part with error sets
-    // For now we keep it as is for simplicity but later we need to rafactor it
-    token_error,
+    // Special case
+    token_eof,
 };
+
+const ScannerError = error{ UnterminatedString, UnexpectedCharacter };
 
 pub const Token = struct {
     token_type: TokenType,
@@ -74,16 +73,16 @@ pub const Scanner = struct {
         self.line = 0;
     }
 
-    pub fn scanNext(self: *Scanner) ?Token {
+    pub fn scanNext(self: *Scanner) ScannerError!Token {
         self.skipWhitespace();
         self.start = self.current;
 
-        if (self.isAtEof()) return null;
+        if (self.isAtEof()) return self.makeToken(TokenType.token_eof);
 
         const ch = self.advance();
 
-        if (self.isAlpha(ch)) return self.consumeIdentifier();
-        if (self.isDigit(ch)) return self.consumeNumber();
+        if (isAlpha(ch)) return self.consumeIdentifier();
+        if (isDigit(ch)) return self.consumeNumber();
 
         return switch (ch) {
             '{' => self.makeToken(TokenType.token_left_brace),
@@ -108,19 +107,19 @@ pub const Scanner = struct {
 
             '"' => self.consumeString(),
 
-            else => self.errorToken("Unexpected character."),
+            else => ScannerError.UnexpectedCharacter,
         };
     }
 
     fn consumeIdentifier(self: *Scanner) Token {
-        while (self.isAlpha(self.peek()) or self.isDigit(self.peek())) {
+        while (isAlpha(self.peek()) or isDigit(self.peek())) {
             _ = self.advance();
         }
 
         return self.makeToken(self.inferIdentifierToken());
     }
 
-    fn consumeString(self: *Scanner) ?Token {
+    fn consumeString(self: *Scanner) ScannerError!Token {
         // TODO: So far escaping is not covered
         // i.e: not consider \" as an end of sequence
         while (self.peek() != '"' and !self.isAtEof()) {
@@ -130,20 +129,20 @@ pub const Scanner = struct {
             _ = self.advance();
         }
 
-        if (self.isAtEof()) return self.errorToken("Unterminated string.");
+        if (self.isAtEof()) return ScannerError.UnterminatedString;
 
         _ = self.advance(); // Consuming the closing quote
         return self.makeToken(TokenType.token_string);
     }
 
     fn consumeNumber(self: *Scanner) Token {
-        while (self.isDigit(self.peek())) {
+        while (isDigit(self.peek())) {
             _ = self.advance();
         }
 
-        if (self.peek() == '.' and self.isDigit(self.peekNext() orelse 0)) {
+        if (self.peek() == '.' and isDigit(self.peekNext())) {
             _ = self.advance();
-            while (self.isDigit(self.peek())) {
+            while (isDigit(self.peek())) {
                 _ = self.advance();
             }
         }
@@ -177,12 +176,14 @@ pub const Scanner = struct {
 
     inline fn peek(self: Scanner) u8 {
         if (self.isAtEof()) return 0;
+
         return self.current[0];
     }
 
-    inline fn peekNext(self: Scanner) ?u8 {
-        if (self.isAtEof()) return null;
-        if (self.current + 1 == self.eof) return null;
+    inline fn peekNext(self: Scanner) u8 {
+        if (self.isAtEof()) return 0;
+        if (self.current + 1 == self.eof) return 0;
+
         return (self.current + 1)[0];
     }
 
@@ -205,13 +206,11 @@ pub const Scanner = struct {
         return self.eof == self.current;
     }
 
-    fn isAlpha(self: Scanner, char: u8) bool {
-        _ = self;
+    fn isAlpha(char: u8) bool {
         return (char >= 'a' and char <= 'z') or (char >= 'A' and char <= 'Z') or char == '_';
     }
 
-    fn isDigit(self: *Scanner, char: u8) bool {
-        _ = self;
+    fn isDigit(char: u8) bool {
         return char >= '0' and char <= '9';
     }
 
@@ -262,26 +261,19 @@ pub const Scanner = struct {
             .line = self.line,
         };
     }
-
-    fn errorToken(self: Scanner, msg: []const u8) Token {
-        return Token{
-            .token_type = TokenType.token_error,
-            .str = msg,
-            .line = self.line,
-        };
-    }
 };
 
 // Testing Section
 
 fn expectToken(scanner: *Scanner, expected_type: TokenType, expected_str: []const u8) !void {
-    const token = scanner.scanNext() orelse return error.UnexpectedEof;
+    const token = try scanner.scanNext();
     try testing.expectEqual(expected_type, token.token_type);
     try testing.expectEqualStrings(expected_str, token.str);
 }
 
 fn expectEof(scanner: *Scanner) !void {
-    try testing.expect(scanner.scanNext() == null);
+    const eof_token = try scanner.scanNext();
+    try testing.expectEqual(TokenType.token_eof, eof_token.token_type);
 }
 
 test "expect parsing simple combination of tokenw with 1-2 chars" {

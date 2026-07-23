@@ -9,10 +9,10 @@ const Value = @import("value.zig").Value;
 
 const ObjectString = @import("object.zig").ObjectString;
 
-pub const InterpretError = (std.mem.Allocator.Error || error{
+pub const InterpretError = error{
     CompileError,
     RuntimeError,
-});
+};
 
 pub const VirtualMachine = struct {
     const Self = @This();
@@ -39,7 +39,7 @@ pub const VirtualMachine = struct {
         self.stack.deinit(alloc);
     }
 
-    fn run(self: *Self, alloc: std.mem.Allocator) InterpretError!void {
+    fn run(self: *Self, alloc: std.mem.Allocator) !void {
         while (true) {
             if (builtin.mode == .Debug) {
                 std.debug.print("        ", .{});
@@ -77,6 +77,7 @@ pub const VirtualMachine = struct {
                         return self.reportRuntimeError("Operand must be a number\n", .{});
                     }
 
+                    // Trip over a dollar to pick a dime ;)
                     const top = self.stack.items.len - 1;
                     self.stack.items[top].val_number = -top_value.val_number;
                 },
@@ -174,10 +175,15 @@ pub const VirtualMachine = struct {
 
                     try self.stack.append(alloc, Value{ .val_number = a / b });
                 },
-                .op_return => {
+                .op_print => {
                     self.stack.pop().?.print();
                     std.debug.print("\n", .{});
-
+                },
+                .op_pop => {
+                    _ = self.stack.pop();
+                },
+                .op_return => {
+                    // End of an interpretation loop
                     return;
                 },
             }

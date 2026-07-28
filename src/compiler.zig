@@ -90,9 +90,10 @@ pub const Compiler = struct {
     const Parser = struct {
         current: Token,
         previous: Token,
+        had_error: bool,
         panic_mode: bool,
 
-        pub const init: @This() = .{ .current = undefined, .previous = undefined, .panic_mode = false };
+        pub const init: @This() = .{ .current = undefined, .previous = undefined, .panic_mode = false, .had_error = false };
     };
 
     pub const init: Self = .{ .compiling_chunk = undefined, .scanner = undefined, .parser = .init };
@@ -105,19 +106,27 @@ pub const Compiler = struct {
         self.compiling_chunk = chunk;
         self.scanner.init(source);
 
-        try self.advance();
+        self.advance();
 
         while (!self.match(TokenType.token_eof)) {
             try self.declaration(alloc);
         }
 
         try self.endCompilation(alloc);
+
+        if (self.parser.had_error) {
+            return CompilerError.ParseError;
+        }
     }
 
     // Statments
 
     fn declaration(self: *Compiler, alloc: std.mem.Allocator) !void {
         try self.statement(alloc);
+
+        if (self.parser.panic_mode) {
+            self.synchronization();
+        }
     }
 
     fn statement(self: *Compiler, alloc: std.mem.Allocator) !void {
@@ -130,13 +139,17 @@ pub const Compiler = struct {
 
     fn printStatement(self: *Compiler, alloc: std.mem.Allocator) !void {
         try self.expression(alloc);
-        try self.consume(TokenType.token_semicolon, "Expect ';' after expression.");
+
+        self.consume(TokenType.token_semicolon, "Expect ';' after expression.");
+
         try self.emitByte(alloc, @intFromEnum(OpCode.op_print));
     }
 
     fn expressionStatement(self: *Compiler, alloc: std.mem.Allocator) !void {
         try self.expression(alloc);
-        try self.consume(TokenType.token_semicolon, "Expect ';' after expression.");
+
+        self.consume(TokenType.token_semicolon, "Expect ';' after expression.");
+
         try self.emitByte(alloc, @intFromEnum(OpCode.op_pop));
     }
 
@@ -162,7 +175,8 @@ pub const Compiler = struct {
 
     fn grouping(self: *Compiler, alloc: std.mem.Allocator) !void {
         try self.expression(alloc);
-        try self.consume(.token_right_paren, "Expect ')' after expression.");
+
+        self.consume(.token_right_paren, "Expect ')' after expression.");
     }
 
     fn binary(self: *Compiler, alloc: std.mem.Allocator) !void {
@@ -210,7 +224,7 @@ pub const Compiler = struct {
     }
 
     fn parsePrecedence(self: *Compiler, alloc: std.mem.Allocator, precedence: Precedence) !void {
-        try self.advance();
+        self.advance();
 
         if (rules[@intFromEnum(self.parser.previous.token_type)].prefix) |prefix_rule| {
             try prefix_rule(self, alloc);
@@ -219,7 +233,7 @@ pub const Compiler = struct {
         }
 
         while (@intFromEnum(precedence) <= @intFromEnum(rules[@intFromEnum(self.parser.current.token_type)].precedence)) {
-            try self.advance();
+            self.advance();
 
             if (rules[@intFromEnum(self.parser.previous.token_type)].infix) |infix_rule| {
                 try infix_rule(self, alloc);
@@ -227,22 +241,38 @@ pub const Compiler = struct {
         }
     }
 
+    // Synchronisation
+
+    fn synchronization(self: *Compiler) void {
+        self.parser.panic_mode = false;
+
+        while (self.parser.current.token_type != .token_eof) {
+            if (self.parser.previous.token_type == .token_semicolon) return;
+
+            switch (self.parser.current.token_type) {
+                .token_class, .token_fun, .token_var, .token_for, .token_if, .token_while, .token_print, .token_return => return,
+                else => self.advance(),
+            }
+        }
+    }
+
     // Parsing helpers.
 
-    fn advance(self: *Compiler) !void {
+    fn advance(self: *Compiler) void {
         self.parser.previous = self.parser.current;
 
-        if (self.scanner.scanNext()) |token| {
-            self.parser.current = token;
-        } else |err| {
-            try errorAtScan(self.parser.current, err);
+        while (true) {
+            const token = self.scanner.scanNext();
+
+            if (token.token_type != .token_error) break;
+
+            self.errorAtCurr(token.str);
         }
     }
 
     fn match(self: *Compiler, expected_token: TokenType) bool {
         if (self.check(expected_token)) {
-            // TODO: Check if we conceal an error in case of swallowing parsing errors (Scanner Errors)
-            self.advance() catch return false;
+            self.advance();
 
             return true;
         }
@@ -250,12 +280,14 @@ pub const Compiler = struct {
         return false;
     }
 
-    fn consume(self: *Compiler, expected_token: TokenType, msg: []const u8) !void {
+    fn consume(self: *Compiler, expected_token: TokenType, msg: []const u8) void {
         if (self.check(expected_token)) {
-            return self.advance();
+            self.advance();
+
+            return;
         }
 
-        try self.errorAtCurr(msg);
+        self.errorAtCurr(msg);
     }
 
     inline fn check(self: *Compiler, token_type: TokenType) bool {
@@ -266,7 +298,7 @@ pub const Compiler = struct {
 
     fn emitByte(self: *Compiler, alloc: std.mem.Allocator, byte: u8) !void {
         var current_chunk = self.currentChunk();
-        try current_chunk.write(alloc, byte, self.parser.current.line);
+        return current_chunk.write(alloc, byte, self.parser.current.line);
     }
 
     fn emitBytes(self: *Compiler, alloc: std.mem.Allocator, byte1: u8, byte2: u8) !void {
@@ -275,7 +307,7 @@ pub const Compiler = struct {
     }
 
     fn emitReturn(self: *Compiler, alloc: std.mem.Allocator) !void {
-        try self.emitByte(alloc, @intFromEnum(OpCode.op_return));
+        return self.emitByte(alloc, @intFromEnum(OpCode.op_return));
     }
 
     fn endCompilation(self: *Compiler, alloc: std.mem.Allocator) !void {
@@ -292,27 +324,25 @@ pub const Compiler = struct {
 
     // Error reporting helpers.
 
-    fn errorAtCurr(self: *Compiler, msg: []const u8) !void {
-        try errorAt(self.parser.current, msg);
+    fn errorAtCurr(self: *Compiler, msg: []const u8) void {
+        errorAt(self, self.parser.current, msg);
     }
 
-    fn errorAtPrev(self: *Compiler, msg: []const u8) !void {
-        try errorAt(self.parser.previous, msg);
+    fn errorAtPrev(self: *Compiler, msg: []const u8) void {
+        errorAt(self, self.parser.previous, msg);
     }
 
-    fn errorAt(token: Token, msg: []const u8) !void {
+    fn errorAt(self: *Compiler, token: Token, msg: []const u8) void {
+        if (self.parser.panic_mode) return;
+
+        self.parser.panic_mode = true;
+
         std.debug.print("[line {d}] Error", .{token.line});
 
         std.debug.print(" at '{s}'", .{token.str});
 
         std.debug.print(": {s}\n", .{msg});
 
-        return CompilerError.ParseError;
-    }
-
-    fn errorAtScan(token: Token, err: anyerror) !void {
-        std.debug.print("[line {d}] Error: {s}\n", .{ token.line, @errorName(err) });
-
-        return CompilerError.ParseError;
+        self.parser.had_error = true;
     }
 };

@@ -48,10 +48,9 @@ pub const TokenType = enum {
     token_nil,
     token_print,
     // Special case
+    token_error,
     token_eof,
 };
-
-const ScannerError = error{ UnterminatedString, UnexpectedCharacter };
 
 pub const Token = struct {
     token_type: TokenType,
@@ -73,7 +72,7 @@ pub const Scanner = struct {
         self.line = 0;
     }
 
-    pub fn scanNext(self: *Scanner) ScannerError!Token {
+    pub fn scanNext(self: *Scanner) Token {
         self.skipWhitespace();
         self.start = self.current;
 
@@ -107,7 +106,7 @@ pub const Scanner = struct {
 
             '"' => self.consumeString(),
 
-            else => ScannerError.UnexpectedCharacter,
+            else => self.makeErrorToken("Unexpected character."),
         };
     }
 
@@ -119,7 +118,7 @@ pub const Scanner = struct {
         return self.makeToken(self.inferIdentifierToken());
     }
 
-    fn consumeString(self: *Scanner) ScannerError!Token {
+    fn consumeString(self: *Scanner) Token {
         // TODO: So far escaping is not covered
         // i.e: not consider \" as an end of sequence
         while (self.peek() != '"' and !self.isAtEof()) {
@@ -129,7 +128,7 @@ pub const Scanner = struct {
             _ = self.advance();
         }
 
-        if (self.isAtEof()) return ScannerError.UnterminatedString;
+        if (self.isAtEof()) return self.makeErrorToken("Unterminated string.");
 
         _ = self.advance(); // Consuming the closing quote
         return self.makeToken(TokenType.token_string);
@@ -261,18 +260,35 @@ pub const Scanner = struct {
             .line = self.line,
         };
     }
+
+    fn makeErrorToken(self: *Scanner, msg: []const u8) Token {
+        return .{
+            .token_type = TokenType.token_error,
+            .str = msg,
+            .line = self.line,
+        };
+    }
 };
 
 // Testing Section
 
+fn expectTokens(scanner: *Scanner, expect_tokens: []struct { TokenType, []const u8 }) !void {
+    for (expect_tokens) |tuple| {
+        const token = scanner.scanNext();
+        const exp_type, const exp_str = tuple;
+        try testing.expectEqual(exp_type, token.token_type);
+        try testing.expectEqualStrings(exp_str, token.str);
+    }
+}
+
 fn expectToken(scanner: *Scanner, expected_type: TokenType, expected_str: []const u8) !void {
-    const token = try scanner.scanNext();
+    const token = scanner.scanNext();
     try testing.expectEqual(expected_type, token.token_type);
     try testing.expectEqualStrings(expected_str, token.str);
 }
 
 fn expectEof(scanner: *Scanner) !void {
-    const eof_token = try scanner.scanNext();
+    const eof_token = scanner.scanNext();
     try testing.expectEqual(TokenType.token_eof, eof_token.token_type);
 }
 
@@ -392,4 +408,31 @@ test "expect parsing identifiers" {
     try expectToken(&scanner, TokenType.token_identifier, "funfun");
     try expectToken(&scanner, TokenType.token_identifier, "thisisnotakeyword");
     try expectEof(&scanner);
+}
+
+test "expect to recognize unexpected character in the seq of tokens" {
+    const listing = "var keyword = 1 + @";
+
+    var scanner: Scanner = undefined;
+    scanner.init(listing);
+
+    try expectToken(&scanner, TokenType.token_var, "var");
+    try expectToken(&scanner, TokenType.token_identifier, "keyword");
+    try expectToken(&scanner, TokenType.token_equal, "=");
+    try expectToken(&scanner, TokenType.token_number, "1");
+    try expectToken(&scanner, TokenType.token_plus, "+");
+    try expectToken(&scanner, TokenType.token_error, "Unexpected character.");
+    try expectEof(&scanner);
+}
+
+test "expect to recognize unterminated string" {
+    const listing = "var keyword = \"something is";
+
+    var scanner: Scanner = undefined;
+    scanner.init(listing);
+
+    try expectToken(&scanner, TokenType.token_var, "var");
+    try expectToken(&scanner, TokenType.token_identifier, "keyword");
+    try expectToken(&scanner, TokenType.token_equal, "=");
+    try expectToken(&scanner, TokenType.token_error, "Unterminated string.");
 }

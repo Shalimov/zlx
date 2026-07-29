@@ -75,6 +75,7 @@ const rules = rls: {
     table[@intFromEnum(TokenType.token_var)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_nil)] = .{ .prefix = Compiler.literal, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_print)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@intFromEnum(TokenType.token_error)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_eof)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
 
     break :rls table;
@@ -229,7 +230,9 @@ pub const Compiler = struct {
         if (rules[@intFromEnum(self.parser.previous.token_type)].prefix) |prefix_rule| {
             try prefix_rule(self, alloc);
         } else {
-            return self.errorAtPrev("Unexpected expression.");
+            self.errorAtPrev("Unexpected expression.");
+
+            return;
         }
 
         while (@intFromEnum(precedence) <= @intFromEnum(rules[@intFromEnum(self.parser.current.token_type)].precedence)) {
@@ -263,6 +266,7 @@ pub const Compiler = struct {
 
         while (true) {
             const token = self.scanner.scanNext();
+            self.parser.current = token;
 
             if (token.token_type != .token_error) break;
 
@@ -339,7 +343,13 @@ pub const Compiler = struct {
 
         std.debug.print("[line {d}] Error", .{token.line});
 
-        std.debug.print(" at '{s}'", .{token.str});
+        switch (token.token_type) {
+            .token_error => {},
+            .token_eof => {
+                std.debug.print(" at end", .{});
+            },
+            else => std.debug.print(" at '{s}'", .{token.str}),
+        }
 
         std.debug.print(": {s}\n", .{msg});
 

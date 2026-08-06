@@ -6,6 +6,7 @@ const Compiler = @import("compiler.zig").Compiler;
 const debug = @import("debug.zig");
 const OpCode = @import("op_code.zig").OpCode;
 const Value = @import("value.zig").Value;
+const GcAllocator = @import("gc-allocator.zig").GcAllocator;
 
 const ObjectString = @import("object.zig").ObjectString;
 
@@ -57,19 +58,6 @@ pub const VirtualMachine = struct {
             const op_code: OpCode = @enumFromInt(self.advance());
 
             switch (op_code) {
-                .op_constant => {
-                    const value = self.chunk.values.items[self.advance()];
-                    try self.stack.append(alloc, value);
-                },
-                .op_constant_long => {
-                    const low_part: u8 = self.advance();
-                    var const_index: u16 = self.advance();
-
-                    const_index = (const_index << 8) | low_part;
-
-                    const value = self.chunk.values.items[const_index];
-                    try self.stack.append(alloc, value);
-                },
                 .op_negate => {
                     const top_value = self.peek(0);
 
@@ -179,6 +167,20 @@ pub const VirtualMachine = struct {
                     self.stack.pop().?.print();
                     std.debug.print("\n", .{});
                 },
+                inline .op_constant, .op_constant_long => |op| {
+                    const value = self.getConstantValue(op);
+
+                    try self.stack.append(alloc, value);
+                },
+                inline .op_define_global, .op_define_global_long => |op| {
+                    const gc = GcAllocator.as(alloc);
+                    const key = self.getConstantValue(op);
+
+                    const key_str = key.val_obj.as(ObjectString);
+                    try gc.globals.insert(alloc, key_str, self.peek(0));
+
+                    _ = self.stack.pop();
+                },
                 .op_pop => {
                     _ = self.stack.pop();
                 },
@@ -199,6 +201,32 @@ pub const VirtualMachine = struct {
         self.ip += 1;
 
         return instruction;
+    }
+
+    fn getConstantValue(self: *Self, comptime op: OpCode) Value {
+        comptime {
+            switch (op) {
+                .op_constant, .op_define_global, .op_constant_long, .op_define_global_long => {},
+                else => @compileError("Get constant is applicable only for limited range of operations."),
+            }
+        }
+
+        var const_index: u16 = undefined;
+
+        switch (op) {
+            .op_constant, .op_define_global => {
+                const_index = self.advance();
+            },
+            .op_constant_long, .op_define_global_long => {
+                const low_part: u8 = self.advance();
+                const_index = self.advance();
+
+                const_index = (const_index << 8) | low_part;
+            },
+            else => unreachable,
+        }
+
+        return self.chunk.values.items[const_index];
     }
 
     fn reportRuntimeError(self: *Self, comptime message: []const u8, args: anytype) InterpretError!void {

@@ -87,14 +87,19 @@ pub const CompilerError = error{
 
 pub const Compiler = struct {
     const Self = @This();
-
     const Parser = struct {
+        const ErrorToken = Token{
+            .line = 0,
+            .str = &[_]u8{},
+            .token_type = .token_error,
+        };
+
         current: Token,
         previous: Token,
         had_error: bool,
         panic_mode: bool,
 
-        pub const init: @This() = .{ .current = undefined, .previous = undefined, .panic_mode = false, .had_error = false };
+        pub const init: @This() = .{ .current = ErrorToken, .previous = ErrorToken, .panic_mode = false, .had_error = false };
     };
 
     pub const init: Self = .{ .compiling_chunk = undefined, .scanner = undefined, .parser = .init };
@@ -123,11 +128,32 @@ pub const Compiler = struct {
     // Statments
 
     fn declaration(self: *Compiler, alloc: std.mem.Allocator) !void {
-        try self.statement(alloc);
+        if (self.match(.token_var)) {
+            try self.varDeclaration(alloc);
+        } else {
+            try self.statement(alloc);
+        }
 
         if (self.parser.panic_mode) {
             self.synchronization();
         }
+    }
+
+    fn varDeclaration(self: *Compiler, alloc: std.mem.Allocator) !void {
+        const chunk = self.currentChunk();
+
+        self.consume(.token_identifier, "Expect variable name.");
+        const var_name = try ObjectString.dupe(alloc, self.parser.previous.str);
+
+        if (self.match(.token_equal)) {
+            try self.expression(alloc);
+        } else {
+            try self.emitOpCode(alloc, .op_nil);
+        }
+
+        self.consume(.token_semicolon, "Expect ';' after var declaration.");
+
+        try chunk.writeConstantAs(alloc, .op_define_global, .{ .val_obj = var_name.asObject() }, self.parser.previous.line);
     }
 
     fn statement(self: *Compiler, alloc: std.mem.Allocator) !void {
@@ -143,7 +169,7 @@ pub const Compiler = struct {
 
         self.consume(TokenType.token_semicolon, "Expect ';' after expression.");
 
-        try self.emitByte(alloc, @intFromEnum(OpCode.op_print));
+        try self.emitOpCode(alloc, .op_print);
     }
 
     fn expressionStatement(self: *Compiler, alloc: std.mem.Allocator) !void {
@@ -151,7 +177,7 @@ pub const Compiler = struct {
 
         self.consume(TokenType.token_semicolon, "Expect ';' after expression.");
 
-        try self.emitByte(alloc, @intFromEnum(OpCode.op_pop));
+        try self.emitOpCode(alloc, .op_pop);
     }
 
     // Expressions, Pratt.
@@ -164,14 +190,14 @@ pub const Compiler = struct {
         const const_value: f64 = try std.fmt.parseFloat(f64, self.parser.previous.str);
 
         var current_chunk = self.currentChunk();
-        try current_chunk.writeConstant(alloc, Value{ .val_number = const_value }, self.parser.previous.line);
+        try current_chunk.writeConstantAs(alloc, .op_constant, Value{ .val_number = const_value }, self.parser.previous.line);
     }
 
     fn string(self: *Compiler, alloc: std.mem.Allocator) !void {
         var current_chunk = self.currentChunk();
 
         var obj_string = try ObjectString.dupe(alloc, self.parser.previous.str);
-        try current_chunk.writeConstant(alloc, Value{ .val_obj = obj_string.asObject() }, self.parser.previous.line);
+        try current_chunk.writeConstantAs(alloc, .op_constant, Value{ .val_obj = obj_string.asObject() }, self.parser.previous.line);
     }
 
     fn grouping(self: *Compiler, alloc: std.mem.Allocator) !void {
@@ -187,17 +213,17 @@ pub const Compiler = struct {
         try self.parsePrecedence(alloc, @enumFromInt(@intFromEnum(precedence) + 1));
 
         try switch (op_type) {
-            .token_plus => self.emitByte(alloc, @intFromEnum(OpCode.op_add)),
-            .token_plus_plus => self.emitByte(alloc, @intFromEnum(OpCode.op_concat)),
-            .token_minus => self.emitByte(alloc, @intFromEnum(OpCode.op_sub)),
-            .token_star => self.emitByte(alloc, @intFromEnum(OpCode.op_mul)),
-            .token_slash => self.emitByte(alloc, @intFromEnum(OpCode.op_div)),
-            .token_equal_equal => self.emitByte(alloc, @intFromEnum(OpCode.op_equal)),
-            .token_less => self.emitByte(alloc, @intFromEnum(OpCode.op_less)),
-            .token_greater => self.emitByte(alloc, @intFromEnum(OpCode.op_greater)),
-            .token_bang_equal => self.emitBytes(alloc, @intFromEnum(OpCode.op_equal), @intFromEnum(OpCode.op_not)),
-            .token_less_equal => self.emitBytes(alloc, @intFromEnum(OpCode.op_greater), @intFromEnum(OpCode.op_not)),
-            .token_greater_equal => self.emitBytes(alloc, @intFromEnum(OpCode.op_less), @intFromEnum(OpCode.op_not)),
+            .token_plus => self.emitOpCode(alloc, .op_add),
+            .token_plus_plus => self.emitOpCode(alloc, .op_concat),
+            .token_minus => self.emitOpCode(alloc, .op_sub),
+            .token_star => self.emitOpCode(alloc, .op_mul),
+            .token_slash => self.emitOpCode(alloc, .op_div),
+            .token_equal_equal => self.emitOpCode(alloc, .op_equal),
+            .token_less => self.emitOpCode(alloc, .op_less),
+            .token_greater => self.emitOpCode(alloc, .op_greater),
+            .token_bang_equal => self.emitOpCodes(alloc, .op_equal, .op_not),
+            .token_less_equal => self.emitOpCodes(alloc, .op_greater, .op_not),
+            .token_greater_equal => self.emitOpCodes(alloc, .op_less, .op_not),
             else => unreachable,
         };
     }
@@ -209,17 +235,17 @@ pub const Compiler = struct {
         try self.parsePrecedence(alloc, .ex_unary);
 
         try switch (operator_type) {
-            .token_bang => self.emitByte(alloc, @intFromEnum(OpCode.op_not)),
-            .token_minus => self.emitByte(alloc, @intFromEnum(OpCode.op_negate)),
+            .token_bang => self.emitOpCode(alloc, .op_not),
+            .token_minus => self.emitOpCode(alloc, .op_negate),
             else => unreachable,
         };
     }
 
     fn literal(self: *Compiler, alloc: std.mem.Allocator) !void {
         try switch (self.parser.previous.token_type) {
-            .token_nil => self.emitByte(alloc, @intFromEnum(OpCode.op_nil)),
-            .token_true => self.emitByte(alloc, @intFromEnum(OpCode.op_true)),
-            .token_false => self.emitByte(alloc, @intFromEnum(OpCode.op_false)),
+            .token_nil => self.emitOpCode(alloc, .op_nil),
+            .token_true => self.emitOpCode(alloc, .op_true),
+            .token_false => self.emitOpCode(alloc, .op_false),
             else => unreachable,
         };
     }
@@ -300,22 +326,22 @@ pub const Compiler = struct {
 
     // Emitters
 
-    fn emitByte(self: *Compiler, alloc: std.mem.Allocator, byte: u8) !void {
+    fn emitOpCode(self: *Compiler, alloc: std.mem.Allocator, op: OpCode) !void {
         var current_chunk = self.currentChunk();
-        return current_chunk.write(alloc, byte, self.parser.current.line);
+        return current_chunk.write(alloc, @intFromEnum(op), self.parser.current.line);
     }
 
-    fn emitBytes(self: *Compiler, alloc: std.mem.Allocator, byte1: u8, byte2: u8) !void {
-        try self.emitByte(alloc, byte1);
-        try self.emitByte(alloc, byte2);
+    fn emitOpCodes(self: *Compiler, alloc: std.mem.Allocator, op1: OpCode, op2: OpCode) !void {
+        try self.emitOpCode(alloc, op1);
+        try self.emitOpCode(alloc, op2);
     }
 
-    fn emitReturn(self: *Compiler, alloc: std.mem.Allocator) !void {
-        return self.emitByte(alloc, @intFromEnum(OpCode.op_return));
+    fn emitOpReturn(self: *Compiler, alloc: std.mem.Allocator) !void {
+        return self.emitOpCode(alloc, .op_return);
     }
 
     fn endCompilation(self: *Compiler, alloc: std.mem.Allocator) !void {
-        try self.emitReturn(alloc);
+        try self.emitOpReturn(alloc);
 
         if (builtin.mode == .Debug) {
             debug.disassembleChunk(self.currentChunk(), "code");

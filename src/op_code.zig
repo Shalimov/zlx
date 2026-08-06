@@ -18,5 +18,7 @@ pub const OpCode = enum {
     // debugging
     op_print,
     // Special cases
+    op_define_global,
+    op_define_global_long,
     op_pop,
 };

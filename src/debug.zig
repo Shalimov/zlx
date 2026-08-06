@@ -9,9 +9,8 @@ fn printSimpleInstruction(name: []const u8, offset: usize) usize {
     return offset + 1;
 }
 
-fn printConstInstruction(chunk: *const Chunk, offset: usize) usize {
+fn printConstInstruction(name: []const u8, chunk: *const Chunk, offset: usize) usize {
     const op: OpCode = @enumFromInt(chunk.code.items[offset]);
-    const op_name = if (op == OpCode.op_constant) "OP_CONSTANT" else "OP_CONSTANT_LONG";
     var step: usize = 2;
     var constant_index: u16 = chunk.code.items[offset + 1];
 
@@ -20,7 +19,7 @@ fn printConstInstruction(chunk: *const Chunk, offset: usize) usize {
         step = 3;
     }
 
-    std.debug.print("{0s: <16} {1d: >4} '", .{ op_name, constant_index });
+    std.debug.print("{0s: <16} {1d: >4} '", .{ name, constant_index });
     chunk.values.items[@as(usize, constant_index)].print();
     std.debug.print("'\n", .{});
 
@@ -48,7 +47,10 @@ pub fn disassembleInstruction(chunk: *const Chunk, offset: usize) usize {
     const instruction: OpCode = @enumFromInt(chunk.code.items[offset]);
 
     return switch (instruction) {
-        .op_constant, .op_constant_long => printConstInstruction(chunk, offset),
+        .op_constant => printConstInstruction("OP_CONSTANT", chunk, offset),
+        .op_constant_long => printConstInstruction("OP_CONSTANT_LONG", chunk, offset),
+        .op_define_global => printConstInstruction("OP_DEFINE_GLOBAL", chunk, offset),
+        .op_define_global_long => printConstInstruction("OP_DEFINE_GLOBAL_LONG", chunk, offset),
         .op_not => printSimpleInstruction("OP_NOT", offset),
         .op_negate => printSimpleInstruction("OP_NEGATE", offset),
         .op_nil => printSimpleInstruction("OP_NIL", offset),

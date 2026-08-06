@@ -9,11 +9,12 @@ const ObjectString = objects.ObjectString;
 
 pub const GcAllocator = struct {
     internalized_strings: HashTable,
+    globals: HashTable,
     inner_allocator: std.mem.Allocator,
     object_pool: ?*Object,
 
     pub fn prepare(inner_alloc: std.mem.Allocator) !GcAllocator {
-        return .{ .internalized_strings = try .init(inner_alloc), .inner_allocator = inner_alloc, .object_pool = null };
+        return .{ .internalized_strings = try .init(inner_alloc), .globals = try .init(inner_alloc), .inner_allocator = inner_alloc, .object_pool = null };
     }
 
     pub fn allocator(self: *GcAllocator) std.mem.Allocator {
@@ -78,26 +79,13 @@ pub const GcAllocator = struct {
         self.destroyObjectInternal(obj);
     }
 
-    pub fn freeObjects(self: *GcAllocator) void {
-        var curr: ?*Object = self.object_pool;
-
-        if (curr == null) {
-            return;
-        }
-
-        while (curr) |safe_curr| {
-            const next = safe_curr.next;
-            self.destroyObjectInternal(safe_curr);
-            curr = next;
-        }
-    }
-
     pub fn as(target_alloc: std.mem.Allocator) *GcAllocator {
         return @ptrCast(@alignCast(target_alloc.ptr));
     }
 
     pub fn deinit(self: *GcAllocator) void {
         self.internalized_strings.deinit(self.inner_allocator);
+        self.globals.deinit(self.inner_allocator);
         self.freeObjects();
     }
 
@@ -139,6 +127,20 @@ pub const GcAllocator = struct {
             p.next = curr.?.next;
         } else {
             self.object_pool = curr.?.next;
+        }
+    }
+
+    fn freeObjects(self: *GcAllocator) void {
+        var curr: ?*Object = self.object_pool;
+
+        if (curr == null) {
+            return;
+        }
+
+        while (curr) |safe_curr| {
+            const next = safe_curr.next;
+            self.destroyObjectInternal(safe_curr);
+            curr = next;
         }
     }
 

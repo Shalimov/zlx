@@ -29,11 +29,11 @@ const united_memory_region_alignment = Alignment.max(Alignment.of(*ObjectString)
 pub const HashTable = struct {
     const HashTableError = error{RespaceFailure};
 
+    keys: [*]*ObjectString,
+    values: [*]Value,
     capacity: usize,
     count: usize,
     tombstone_count: usize,
-    keys: [*]*ObjectString,
-    values: [*]Value,
 
     pub fn init(alloc: std.mem.Allocator) !HashTable {
         return try initWithCap(alloc, n_basis);

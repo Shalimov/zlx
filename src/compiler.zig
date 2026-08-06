@@ -114,7 +114,7 @@ pub const Compiler = struct {
 
         self.advance();
 
-        while (!self.match(TokenType.token_eof)) {
+        while (!self.match(.token_eof)) {
             try self.declaration(alloc);
         }
 
@@ -157,7 +157,7 @@ pub const Compiler = struct {
     }
 
     fn statement(self: *Compiler, alloc: std.mem.Allocator) !void {
-        if (self.match(TokenType.token_print)) {
+        if (self.match(.token_print)) {
             try self.printStatement(alloc);
         } else {
             try self.expressionStatement(alloc);
@@ -167,7 +167,7 @@ pub const Compiler = struct {
     fn printStatement(self: *Compiler, alloc: std.mem.Allocator) !void {
         try self.expression(alloc);
 
-        self.consume(TokenType.token_semicolon, "Expect ';' after expression.");
+        self.consume(.token_semicolon, "Expect ';' after expression.");
 
         try self.emitOpCode(alloc, .op_print);
     }
@@ -175,7 +175,7 @@ pub const Compiler = struct {
     fn expressionStatement(self: *Compiler, alloc: std.mem.Allocator) !void {
         try self.expression(alloc);
 
-        self.consume(TokenType.token_semicolon, "Expect ';' after expression.");
+        self.consume(.token_semicolon, "Expect ';' after expression.");
 
         try self.emitOpCode(alloc, .op_pop);
     }

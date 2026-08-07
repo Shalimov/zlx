@@ -56,7 +56,7 @@ const rules = rls: {
     table[@intFromEnum(TokenType.token_greater_equal)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_comparison };
     table[@intFromEnum(TokenType.token_less)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_comparison };
     table[@intFromEnum(TokenType.token_less_equal)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_comparison };
-    table[@intFromEnum(TokenType.token_identifier)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@intFromEnum(TokenType.token_identifier)] = .{ .prefix = Compiler.variable, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_string)] = .{ .prefix = Compiler.string, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_number)] = .{ .prefix = Compiler.number, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_true)] = .{ .prefix = Compiler.literal, .infix = null, .precedence = .ex_none };
@@ -195,8 +195,9 @@ pub const Compiler = struct {
 
     fn string(self: *Compiler, alloc: std.mem.Allocator) !void {
         var current_chunk = self.currentChunk();
+        const token = self.parser.previous;
 
-        var obj_string = try ObjectString.dupe(alloc, self.parser.previous.str);
+        var obj_string = try ObjectString.dupe(alloc, token.str[1 .. token.str.len - 1]);
         try current_chunk.writeConstantAs(alloc, .op_constant, Value{ .val_obj = obj_string.asObject() }, self.parser.previous.line);
     }
 
@@ -239,6 +240,14 @@ pub const Compiler = struct {
             .token_minus => self.emitOpCode(alloc, .op_negate),
             else => unreachable,
         };
+    }
+
+    fn variable(self: *Compiler, alloc: std.mem.Allocator) !void {
+        const current_chunk = self.currentChunk();
+        const token = self.parser.previous;
+        const variable_name = try ObjectString.dupe(alloc, token.str);
+
+        try current_chunk.writeConstantAs(alloc, .op_get_global, Value{ .val_obj = variable_name.asObject() }, token.line);
     }
 
     fn literal(self: *Compiler, alloc: std.mem.Allocator) !void {

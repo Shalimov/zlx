@@ -51,6 +51,8 @@ pub fn disassembleInstruction(chunk: *const Chunk, offset: usize) usize {
         .op_constant_long => printConstInstruction("OP_CONSTANT_LONG", chunk, offset),
         .op_define_global => printConstInstruction("OP_DEFINE_GLOBAL", chunk, offset),
         .op_define_global_long => printConstInstruction("OP_DEFINE_GLOBAL_LONG", chunk, offset),
+        .op_get_global => printConstInstruction("OP_GET_GLOBAL", chunk, offset),
+        .op_get_global_long => printConstInstruction("OP_GET_GLOBAL_LONG", chunk, offset),
         .op_not => printSimpleInstruction("OP_NOT", offset),
         .op_negate => printSimpleInstruction("OP_NEGATE", offset),
         .op_nil => printSimpleInstruction("OP_NIL", offset),

@@ -16,12 +16,14 @@ pub const OpCode = enum {
     // debugging
     op_print,
 
+    // Special cases
+    op_pop,
+
     // Wide operations
     op_constant_long,
     op_constant,
     op_define_global_long,
     op_define_global,
-
-    // Special cases
-    op_pop,
+    op_get_global_long,
+    op_get_global,
 };

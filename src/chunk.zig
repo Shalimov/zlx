@@ -45,7 +45,11 @@ pub const Chunk = struct {
                     op_short = .op_define_global;
                     op_long = .op_define_global_long;
                 },
-                else => @compileError("Only op_constant and op_define_global are supported, long versions are inferred automatically"),
+                .op_get_global => {
+                    op_short = .op_get_global;
+                    op_long = .op_get_global_long;
+                },
+                else => @compileError("Only op_constant, op_define_global, op_get_global are supported, long versions are inferred automatically"),
             }
         }
 
@@ -58,8 +62,8 @@ pub const Chunk = struct {
             try self.write(alloc, @intCast(current_const_index), line);
         } else if (current_const_index <= MAX_U16) {
             const index_u16: u16 = @intCast(current_const_index);
-            const low_part: u8 = @truncate(index_u16 & 0x00FF);
-            const high_part: u8 = @truncate((index_u16 >> 8) & 0x00FF);
+            const low_part: u8 = @truncate(index_u16 & 0x00_FF);
+            const high_part: u8 = @truncate((index_u16 >> 8) & 0x00_FF);
 
             try self.write(alloc, @intFromEnum(op_long), line);
             try self.write(alloc, low_part, line);

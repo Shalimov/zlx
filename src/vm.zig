@@ -181,6 +181,18 @@ pub const VirtualMachine = struct {
 
                     _ = self.stack.pop();
                 },
+                inline .op_get_global, .op_get_global_long => |op| {
+                    const gc = GcAllocator.as(alloc);
+                    const key_str = self.getConstantValue(op).val_obj.as(ObjectString);
+
+                    const value = gc.globals.findValue(key_str);
+
+                    if (value == null) {
+                        return self.reportRuntimeError("Variable '{s}' is not defined.", .{key_str.str});
+                    }
+
+                    try self.stack.append(alloc, value.?);
+                },
                 .op_pop => {
                     _ = self.stack.pop();
                 },
@@ -206,7 +218,7 @@ pub const VirtualMachine = struct {
     fn getConstantValue(self: *Self, comptime op: OpCode) Value {
         comptime {
             switch (op) {
-                .op_constant, .op_define_global, .op_constant_long, .op_define_global_long => {},
+                .op_constant, .op_define_global, .op_constant_long, .op_define_global_long, .op_get_global, .op_get_global_long => {},
                 else => @compileError("Get constant is applicable only for limited range of operations."),
             }
         }
@@ -214,10 +226,10 @@ pub const VirtualMachine = struct {
         var const_index: u16 = undefined;
 
         switch (op) {
-            .op_constant, .op_define_global => {
+            .op_constant, .op_define_global, .op_get_global => {
                 const_index = self.advance();
             },
-            .op_constant_long, .op_define_global_long => {
+            .op_constant_long, .op_define_global_long, .op_get_global_long => {
                 const low_part: u8 = self.advance();
                 const_index = self.advance();
 

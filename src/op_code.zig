@@ -1,6 +1,4 @@
 pub const OpCode = enum {
-    op_constant_long,
-    op_constant,
     op_negate,
     op_not,
     op_nil,
@@ -17,8 +15,13 @@ pub const OpCode = enum {
     op_return,
     // debugging
     op_print,
-    // Special cases
-    op_define_global,
+
+    // Wide operations
+    op_constant_long,
+    op_constant,
     op_define_global_long,
+    op_define_global,
+
+    // Special cases
     op_pop,
 };

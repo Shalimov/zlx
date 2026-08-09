@@ -246,8 +246,14 @@ pub const Compiler = struct {
         const current_chunk = self.currentChunk();
         const token = self.parser.previous;
         const variable_name = try ObjectString.dupe(alloc, token.str);
+        const variable_boxed = Value{ .val_obj = variable_name.asObject() };
 
-        try current_chunk.writeConstantAs(alloc, .op_get_global, Value{ .val_obj = variable_name.asObject() }, token.line);
+        if (self.match(.token_equal)) {
+            try self.expression(alloc);
+            try current_chunk.writeConstantAs(alloc, .op_set_global, variable_boxed, token.line);
+        } else {
+            try current_chunk.writeConstantAs(alloc, .op_get_global, variable_boxed, token.line);
+        }
     }
 
     fn literal(self: *Compiler, alloc: std.mem.Allocator) !void {

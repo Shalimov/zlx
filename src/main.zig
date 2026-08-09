@@ -37,7 +37,7 @@ fn repl(alloc: std.mem.Allocator, io: Io, virt: *VirtualMachine) !void {
     while (reader.takeDelimiterExclusive('\n')) |line| {
         reader.toss(1);
 
-        if (line.len == 0) {
+        if (line.len == 0 or std.mem.eql(u8, "/exit", std.mem.trimEnd(u8, line, " \n\r\t"))) {
             try writer.print("Bye bye\n", .{});
             try writer.flush();
 
@@ -75,6 +75,7 @@ pub fn main(init: std.process.Init) !void {
     const arguments = try init.minimal.args.toSlice(aa);
 
     var virt: VirtualMachine = .init;
+    defer virt.deinit(gc_alloc);
 
     if (arguments.len == 1) {
         try repl(gc_alloc, init.io, &virt);

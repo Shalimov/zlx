@@ -49,7 +49,11 @@ pub const Chunk = struct {
                     op_short = .op_get_global;
                     op_long = .op_get_global_long;
                 },
-                else => @compileError("Only op_constant, op_define_global, op_get_global are supported, long versions are inferred automatically"),
+                .op_set_global => {
+                    op_short = .op_set_global;
+                    op_long = .op_set_global_long;
+                },
+                else => @compileError("Only op_constant, op_define_global, op_get_global, op_set_global are supported, long versions are inferred automatically"),
             }
         }
 

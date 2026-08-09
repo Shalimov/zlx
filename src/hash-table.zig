@@ -54,12 +54,13 @@ pub const HashTable = struct {
         return .{ .capacity = capacity, .count = 0, .tombstone_count = 0, .keys = allocated.keys, .values = allocated.values };
     }
 
-    pub fn insert(self: *HashTable, alloc: std.mem.Allocator, key: *ObjectString, value: Value) HashTableError!void {
+    pub fn insert(self: *HashTable, alloc: std.mem.Allocator, key: *ObjectString, value: Value) HashTableError!bool {
         var trailing_capacity = self.capacity - 1;
         var start_idx = key.hash & trailing_capacity;
         var first_tombstone_index: usize = self.capacity;
         var target_index = start_idx;
         var next_count = self.count;
+        var is_new = true;
 
         // Note that comparison here k == key, where both are *ObjectString
         // Is based on an assumption that all strings are internalized
@@ -73,6 +74,7 @@ pub const HashTable = struct {
                 } else if (curr_key != tombstone_ref and curr_key == key) {
                     first_tombstone_index = self.capacity;
                     target_index = curr_idx;
+                    is_new = false;
                     break;
                 }
             } else {
@@ -104,6 +106,8 @@ pub const HashTable = struct {
         self.keys[target_index] = key;
         self.values[target_index] = value;
         self.count = next_count;
+
+        return is_new;
     }
 
     pub fn findValue(self: *HashTable, key: *ObjectString) ?Value {
@@ -314,7 +318,7 @@ test "insert stores value for a new key" {
     const key = try makeString(alloc, "username");
     const value = Value{ .val_number = 123.45 };
 
-    try table.insert(alloc, key, value);
+    _ = try table.insert(alloc, key, value);
 
     const retrieved = table.findValue(key);
     try testing.expect(retrieved != null);
@@ -331,7 +335,7 @@ test "insert increments count for a new key" {
 
     const key = try makeString(alloc, "username");
 
-    try table.insert(alloc, key, Value{ .val_number = 1.0 });
+    _ = try table.insert(alloc, key, Value{ .val_number = 1.0 });
 
     try testing.expectEqual(@as(usize, 1), table.count);
 }
@@ -348,8 +352,8 @@ test "insert updates value for an existing key" {
     const original = Value{ .val_bool = true };
     const updated = Value{ .val_bool = false };
 
-    try table.insert(alloc, key, original);
-    try table.insert(alloc, key, updated);
+    _ = try table.insert(alloc, key, original);
+    _ = try table.insert(alloc, key, updated);
 
     const retrieved = table.findValue(key);
     try testing.expect(retrieved != null);
@@ -366,8 +370,8 @@ test "insert does not change count when updating an existing key" {
 
     const key = try makeString(alloc, "theme");
 
-    try table.insert(alloc, key, Value{ .val_bool = true });
-    try table.insert(alloc, key, Value{ .val_bool = false });
+    _ = try table.insert(alloc, key, Value{ .val_bool = true });
+    _ = try table.insert(alloc, key, Value{ .val_bool = false });
 
     try testing.expectEqual(@as(usize, 1), table.count);
 }
@@ -399,7 +403,7 @@ test "find value retrieves value by content using a different object string" {
     const key2 = try makeString(alloc, "shared_content");
     const value = Value{ .val_number = 99.0 };
 
-    try table.insert(alloc, key1, value);
+    _ = try table.insert(alloc, key1, value);
 
     const retrieved = table.findValue(key2);
     try testing.expect(retrieved != null);
@@ -415,7 +419,7 @@ test "remove makes a key unretrievable" {
     defer table.deinit(alloc);
 
     const key = try makeString(alloc, "temporary");
-    try table.insert(alloc, key, Value{ .val_nil = {} });
+    _ = try table.insert(alloc, key, Value{ .val_nil = {} });
 
     table.remove(key);
 
@@ -431,7 +435,7 @@ test "remove decrements count" {
     defer table.deinit(alloc);
 
     const key = try makeString(alloc, "temporary");
-    try table.insert(alloc, key, Value{ .val_nil = {} });
+    _ = try table.insert(alloc, key, Value{ .val_nil = {} });
 
     table.remove(key);
 
@@ -462,7 +466,7 @@ test "remove on an already removed key is idempotent" {
     defer table.deinit(alloc);
 
     const key = try makeString(alloc, "once");
-    try table.insert(alloc, key, Value{ .val_number = 1.0 });
+    _ = try table.insert(alloc, key, Value{ .val_number = 1.0 });
 
     table.remove(key);
     table.remove(key);
@@ -482,9 +486,9 @@ test "insert restores a removed key" {
     const key = try makeString(alloc, "reusable");
     const new_value = Value{ .val_number = 2.0 };
 
-    try table.insert(alloc, key, Value{ .val_number = 1.0 });
+    _ = try table.insert(alloc, key, Value{ .val_number = 1.0 });
     table.remove(key);
-    try table.insert(alloc, key, new_value);
+    _ = try table.insert(alloc, key, new_value);
 
     const retrieved = table.findValue(key);
     try testing.expect(retrieved != null);
@@ -501,9 +505,9 @@ test "insert restores count after reinserting a removed key" {
 
     const key = try makeString(alloc, "reusable");
 
-    try table.insert(alloc, key, Value{ .val_number = 1.0 });
+    _ = try table.insert(alloc, key, Value{ .val_number = 1.0 });
     table.remove(key);
-    try table.insert(alloc, key, Value{ .val_number = 2.0 });
+    _ = try table.insert(alloc, key, Value{ .val_number = 2.0 });
 
     try testing.expectEqual(@as(usize, 1), table.count);
 }
@@ -522,7 +526,7 @@ test "insert grows capacity when load factor is exceeded" {
     for (0..num_elements) |i| {
         const name = try std.fmt.bufPrint(&buf, "item_{d}", .{i});
         const key = try makeString(alloc, name);
-        try table.insert(alloc, key, Value{ .val_number = @floatFromInt(i) });
+        _ = try table.insert(alloc, key, Value{ .val_number = @floatFromInt(i) });
     }
 
     try testing.expect(table.capacity > actual_capacity);
@@ -544,7 +548,7 @@ test "insert preserves all entries after many insertions" {
     for (0..num_elements) |i| {
         const name = try std.fmt.bufPrint(&buf, "item_{d}", .{i});
         keys[i] = try makeString(alloc, name);
-        try table.insert(alloc, keys[i], Value{ .val_number = @floatFromInt(i) });
+        _ = try table.insert(alloc, keys[i], Value{ .val_number = @floatFromInt(i) });
     }
 
     for (0..num_elements) |i| {
@@ -565,8 +569,8 @@ test "insert at minimum capacity preserves all entries" {
     const key1 = try makeString(alloc, "a");
     const key2 = try makeString(alloc, "b");
 
-    try table.insert(alloc, key1, Value{ .val_number = 1.0 });
-    try table.insert(alloc, key2, Value{ .val_number = 2.0 });
+    _ = try table.insert(alloc, key1, Value{ .val_number = 1.0 });
+    _ = try table.insert(alloc, key2, Value{ .val_number = 2.0 });
 
     const r1 = table.findValue(key1);
     const r2 = table.findValue(key2);
@@ -588,8 +592,8 @@ test "lookup finds colliding keys past a tombstone" {
     const val1 = Value{ .val_number = 1.0 };
     const val2 = Value{ .val_number = 2.0 };
 
-    try table.insert(alloc, keys[0], val1);
-    try table.insert(alloc, keys[1], val2);
+    _ = try table.insert(alloc, keys[0], val1);
+    _ = try table.insert(alloc, keys[1], val2);
 
     table.remove(keys[0]);
 
@@ -607,7 +611,7 @@ test "find key returns the interned key for matching content" {
     defer table.deinit(alloc);
 
     const interned = try makeString(alloc, "shared");
-    try table.insert(alloc, interned, Value{ .val_number = 1.0 });
+    _ = try table.insert(alloc, interned, Value{ .val_number = 1.0 });
 
     var probe_buf: [6]u8 = "shared".*;
     const probe = probe_buf[0..];
@@ -627,7 +631,7 @@ test "find key returns null for non-matching content" {
     defer table.deinit(alloc);
 
     const interned = try makeString(alloc, "present");
-    try table.insert(alloc, interned, Value{ .val_number = 1.0 });
+    _ = try table.insert(alloc, interned, Value{ .val_number = 1.0 });
 
     var probe_buf: [6]u8 = "absent".*;
     const probe = probe_buf[0..];
@@ -664,10 +668,10 @@ test "manual shrink release space when shrink factor is achieved" {
     const key3 = try makeString(alloc, "shared_content_3");
     const key4 = try makeString(alloc, "shared_content_4");
 
-    try table.insert(alloc, key1, .with_false);
-    try table.insert(alloc, key2, .with_true);
-    try table.insert(alloc, key3, .with_nil);
-    try table.insert(alloc, key4, .with_false);
+    _ = try table.insert(alloc, key1, .with_false);
+    _ = try table.insert(alloc, key2, .with_true);
+    _ = try table.insert(alloc, key3, .with_nil);
+    _ = try table.insert(alloc, key4, .with_false);
 
     const upgraded_cap = table.capacity;
 

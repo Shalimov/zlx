@@ -48,7 +48,7 @@ pub const GcAllocator = struct {
         obj_string.hash = hash;
         obj_string.str = concat_str;
 
-        try self.internalized_strings.insert(self.inner_allocator, obj_string, .val_nil);
+        _ = try self.internalized_strings.insert(self.inner_allocator, obj_string, .val_nil);
 
         return obj_string;
     }
@@ -69,7 +69,7 @@ pub const GcAllocator = struct {
         obj_string.hash = hash;
         obj_string.str = dupe_str;
 
-        try self.internalized_strings.insert(self.inner_allocator, obj_string, .val_nil);
+        _ = try self.internalized_strings.insert(self.inner_allocator, obj_string, .val_nil);
 
         return obj_string;
     }

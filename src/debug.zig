@@ -47,27 +47,7 @@ pub fn disassembleInstruction(chunk: *const Chunk, offset: usize) usize {
     const instruction: OpCode = @enumFromInt(chunk.code.items[offset]);
 
     return switch (instruction) {
-        .op_constant => printConstInstruction("OP_CONSTANT", chunk, offset),
-        .op_constant_long => printConstInstruction("OP_CONSTANT_LONG", chunk, offset),
-        .op_define_global => printConstInstruction("OP_DEFINE_GLOBAL", chunk, offset),
-        .op_define_global_long => printConstInstruction("OP_DEFINE_GLOBAL_LONG", chunk, offset),
-        .op_get_global => printConstInstruction("OP_GET_GLOBAL", chunk, offset),
-        .op_get_global_long => printConstInstruction("OP_GET_GLOBAL_LONG", chunk, offset),
-        .op_not => printSimpleInstruction("OP_NOT", offset),
-        .op_negate => printSimpleInstruction("OP_NEGATE", offset),
-        .op_nil => printSimpleInstruction("OP_NIL", offset),
-        .op_true => printSimpleInstruction("OP_TRUE", offset),
-        .op_false => printSimpleInstruction("OP_FALSE", offset),
-        .op_equal => printSimpleInstruction("OP_EQUAL", offset),
-        .op_less => printSimpleInstruction("OP_LESS", offset),
-        .op_greater => printSimpleInstruction("OP_GREATER", offset),
-        .op_concat => printSimpleInstruction("OP_CONCAT", offset),
-        .op_add => printSimpleInstruction("OP_ADD", offset),
-        .op_sub => printSimpleInstruction("OP_SUB", offset),
-        .op_mul => printSimpleInstruction("OP_MUL", offset),
-        .op_div => printSimpleInstruction("OP_DIV", offset),
-        .op_print => printSimpleInstruction("OP_PRINT", offset),
-        .op_pop => printSimpleInstruction("OP_POP", offset),
-        .op_return => printSimpleInstruction("OP_RETURN", offset),
+        inline .op_constant, .op_constant_long, .op_define_global, .op_define_global_long, .op_get_global, .op_get_global_long, .op_set_global, .op_set_global_long => |op| printConstInstruction(@tagName(op), chunk, offset),
+        inline .op_not, .op_negate, .op_nil, .op_true, .op_false, .op_equal, .op_less, .op_greater, .op_concat, .op_add, .op_sub, .op_mul, .op_div, .op_print, .op_pop, .op_return => |op| printSimpleInstruction(@tagName(op), offset),
     };
 }

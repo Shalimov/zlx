@@ -177,7 +177,7 @@ pub const VirtualMachine = struct {
                     const key = self.getConstantValue(op);
 
                     const key_str = key.val_obj.as(ObjectString);
-                    try gc.globals.insert(alloc, key_str, self.peek(0));
+                    _ = try gc.globals.insert(alloc, key_str, self.peek(0));
 
                     _ = self.stack.pop();
                 },
@@ -188,10 +188,25 @@ pub const VirtualMachine = struct {
                     const value = gc.globals.findValue(key_str);
 
                     if (value == null) {
-                        return self.reportRuntimeError("Variable '{s}' is not defined.", .{key_str.str});
+                        return self.reportRuntimeError("Variable '{s}' is undefined.", .{key_str.str});
                     }
 
                     try self.stack.append(alloc, value.?);
+                },
+                inline .op_set_global, .op_set_global_long => |op| {
+                    const gc = GcAllocator.as(alloc);
+                    const key_str = self.getConstantValue(op).val_obj.as(ObjectString);
+
+                    const is_new_insert = try gc.globals.insert(alloc, key_str, self.peek(0));
+
+                    if (is_new_insert) {
+                        // if there were no values it crops up after insert
+                        // while for interpreation of scripts is fine to keep, it's not good for REPL
+                        gc.globals.remove(key_str);
+                        return self.reportRuntimeError("Forbidden to set undefined variable '{s}'.", .{key_str.str});
+                    }
+
+                    // Unique operation in sense (no push, no pop)
                 },
                 .op_pop => {
                     _ = self.stack.pop();
@@ -218,7 +233,7 @@ pub const VirtualMachine = struct {
     fn getConstantValue(self: *Self, comptime op: OpCode) Value {
         comptime {
             switch (op) {
-                .op_constant, .op_define_global, .op_constant_long, .op_define_global_long, .op_get_global, .op_get_global_long => {},
+                .op_constant, .op_define_global, .op_constant_long, .op_define_global_long, .op_get_global, .op_get_global_long, .op_set_global, .op_set_global_long => {},
                 else => @compileError("Get constant is applicable only for limited range of operations."),
             }
         }
@@ -226,10 +241,10 @@ pub const VirtualMachine = struct {
         var const_index: u16 = undefined;
 
         switch (op) {
-            .op_constant, .op_define_global, .op_get_global => {
+            .op_constant, .op_define_global, .op_get_global, .op_set_global => {
                 const_index = self.advance();
             },
-            .op_constant_long, .op_define_global_long, .op_get_global_long => {
+            .op_constant_long, .op_define_global_long, .op_get_global_long, .op_set_global_long => {
                 const low_part: u8 = self.advance();
                 const_index = self.advance();
 

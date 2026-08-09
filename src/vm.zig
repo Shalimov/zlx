@@ -11,7 +11,6 @@ const GcAllocator = @import("gc-allocator.zig").GcAllocator;
 const ObjectString = @import("object.zig").ObjectString;
 
 pub const InterpretError = error{
-    CompileError,
     RuntimeError,
 };
 

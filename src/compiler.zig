@@ -29,7 +29,7 @@ const Precedence = enum {
 };
 
 const rules = rls: {
-    const RuleFn = *const fn (self: *Compiler, alloc: std.mem.Allocator) anyerror!void;
+    const RuleFn = *const fn (self: *Compiler, alloc: std.mem.Allocator, can_assign: bool) anyerror!void;
     const ParseRule = struct { prefix: ?RuleFn, infix: ?RuleFn, precedence: Precedence };
 
     var table = [_]ParseRule{.{ .prefix = null, .infix = null, .precedence = .ex_none }} ** @typeInfo(TokenType).@"enum".fields.len;
@@ -121,6 +121,7 @@ pub const Compiler = struct {
         try self.endCompilation(alloc);
 
         if (self.parser.had_error) {
+            self.parser.had_error = false;
             return CompilerError.ParseError;
         }
     }
@@ -186,14 +187,14 @@ pub const Compiler = struct {
         try self.parsePrecedence(alloc, .ex_assignment);
     }
 
-    fn number(self: *Compiler, alloc: std.mem.Allocator) !void {
+    fn number(self: *Compiler, alloc: std.mem.Allocator, _: bool) !void {
         const const_value: f64 = try std.fmt.parseFloat(f64, self.parser.previous.str);
 
         var current_chunk = self.currentChunk();
         try current_chunk.writeConstantAs(alloc, .op_constant, Value{ .val_number = const_value }, self.parser.previous.line);
     }
 
-    fn string(self: *Compiler, alloc: std.mem.Allocator) !void {
+    fn string(self: *Compiler, alloc: std.mem.Allocator, _: bool) !void {
         var current_chunk = self.currentChunk();
         const token = self.parser.previous;
 
@@ -201,13 +202,13 @@ pub const Compiler = struct {
         try current_chunk.writeConstantAs(alloc, .op_constant, Value{ .val_obj = obj_string.asObject() }, self.parser.previous.line);
     }
 
-    fn grouping(self: *Compiler, alloc: std.mem.Allocator) !void {
+    fn grouping(self: *Compiler, alloc: std.mem.Allocator, _: bool) !void {
         try self.expression(alloc);
 
         self.consume(.token_right_paren, "Expect ')' after expression.");
     }
 
-    fn binary(self: *Compiler, alloc: std.mem.Allocator) !void {
+    fn binary(self: *Compiler, alloc: std.mem.Allocator, _: bool) !void {
         const op_type = self.parser.previous.token_type;
         const precedence = rules[@intFromEnum(op_type)].precedence;
 
@@ -229,7 +230,7 @@ pub const Compiler = struct {
         };
     }
 
-    fn unary(self: *Compiler, alloc: std.mem.Allocator) !void {
+    fn unary(self: *Compiler, alloc: std.mem.Allocator, _: bool) !void {
         const operator_type = self.parser.previous.token_type;
 
         // Compile the operand.
@@ -242,13 +243,13 @@ pub const Compiler = struct {
         };
     }
 
-    fn variable(self: *Compiler, alloc: std.mem.Allocator) !void {
+    fn variable(self: *Compiler, alloc: std.mem.Allocator, can_assign: bool) !void {
         const current_chunk = self.currentChunk();
         const token = self.parser.previous;
         const variable_name = try ObjectString.dupe(alloc, token.str);
         const variable_boxed = Value{ .val_obj = variable_name.asObject() };
 
-        if (self.match(.token_equal)) {
+        if (can_assign and self.match(.token_equal)) {
             try self.expression(alloc);
             try current_chunk.writeConstantAs(alloc, .op_set_global, variable_boxed, token.line);
         } else {
@@ -256,7 +257,7 @@ pub const Compiler = struct {
         }
     }
 
-    fn literal(self: *Compiler, alloc: std.mem.Allocator) !void {
+    fn literal(self: *Compiler, alloc: std.mem.Allocator, _: bool) !void {
         try switch (self.parser.previous.token_type) {
             .token_nil => self.emitOpCode(alloc, .op_nil),
             .token_true => self.emitOpCode(alloc, .op_true),
@@ -268,8 +269,10 @@ pub const Compiler = struct {
     fn parsePrecedence(self: *Compiler, alloc: std.mem.Allocator, precedence: Precedence) !void {
         self.advance();
 
+        const can_assign = @intFromEnum(precedence) <= @intFromEnum(Precedence.ex_assignment);
+
         if (rules[@intFromEnum(self.parser.previous.token_type)].prefix) |prefix_rule| {
-            try prefix_rule(self, alloc);
+            try prefix_rule(self, alloc, can_assign);
         } else {
             self.errorAtPrev("Unexpected expression.");
 
@@ -280,8 +283,12 @@ pub const Compiler = struct {
             self.advance();
 
             if (rules[@intFromEnum(self.parser.previous.token_type)].infix) |infix_rule| {
-                try infix_rule(self, alloc);
+                try infix_rule(self, alloc, can_assign);
             }
+        }
+
+        if (can_assign and self.match(.token_equal)) {
+            self.errorAtPrev("Invalid assignment target.");
         }
     }
 

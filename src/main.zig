@@ -1,13 +1,15 @@
 const std = @import("std");
 
 const Chunk = @import("chunk.zig").Chunk;
-const Compiler = @import("compiler.zig").Compiler;
 const OpCode = @import("op_code.zig").OpCode;
 const GcAllocator = @import("gc-allocator.zig").GcAllocator;
+const compiler = @import("compiler.zig");
 const debug = @import("debug.zig");
 const vm = @import("vm.zig");
 
 const Io = std.Io;
+const Compiler = compiler.Compiler;
+const CompilerError = compiler.CompilerError;
 const InterpretError = vm.InterpretError;
 const VirtualMachine = vm.VirtualMachine;
 
@@ -44,7 +46,10 @@ fn repl(alloc: std.mem.Allocator, io: Io, virt: *VirtualMachine) !void {
             break;
         }
 
-        try interpret(alloc, virt, line);
+        try (interpret(alloc, virt, line) catch |err| switch (err) {
+            InterpretError.RuntimeError, CompilerError.ParseError => |repl_accpt_error| writer.print("\n== [{t}]. Repl continue. ==\n", .{repl_accpt_error}),
+            else => err,
+        });
 
         try writer.print("[script]> ", .{});
         try writer.flush();

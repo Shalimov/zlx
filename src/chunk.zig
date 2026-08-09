@@ -31,28 +31,10 @@ pub const Chunk = struct {
         try self.lines.append(alloc, line);
     }
 
-    pub fn writeConstantAs(self: *Chunk, alloc: std.mem.Allocator, comptime as: OpCode, value: Value, line: usize) !void {
-        comptime var op_short: OpCode = undefined;
-        comptime var op_long: OpCode = undefined;
-
+    pub fn writeConstantAs(self: *Chunk, alloc: std.mem.Allocator, comptime as_op: OpCode, value: Value, line: usize) !void {
         comptime {
-            switch (as) {
-                .op_constant => {
-                    op_short = .op_constant;
-                    op_long = .op_constant_long;
-                },
-                .op_define_global => {
-                    op_short = .op_define_global;
-                    op_long = .op_define_global_long;
-                },
-                .op_get_global => {
-                    op_short = .op_get_global;
-                    op_long = .op_get_global_long;
-                },
-                .op_set_global => {
-                    op_short = .op_set_global;
-                    op_long = .op_set_global_long;
-                },
+            switch (as_op) {
+                .op_constant, .op_define_global, .op_get_global, .op_set_global => {},
                 else => @compileError("Only op_constant, op_define_global, op_get_global, op_set_global are supported, long versions are inferred automatically"),
             }
         }
@@ -62,14 +44,15 @@ pub const Chunk = struct {
         const current_const_index = self.values.items.len - 1;
 
         if (current_const_index <= MAX_U8) {
-            try self.write(alloc, @intFromEnum(op_short), line);
+            try self.write(alloc, @intFromEnum(as_op), line);
             try self.write(alloc, @intCast(current_const_index), line);
         } else if (current_const_index <= MAX_U16) {
             const index_u16: u16 = @intCast(current_const_index);
             const low_part: u8 = @truncate(index_u16 & 0x00_FF);
             const high_part: u8 = @truncate((index_u16 >> 8) & 0x00_FF);
 
-            try self.write(alloc, @intFromEnum(op_long), line);
+            try self.write(alloc, @intFromEnum(OpCode.op_wide), line);
+            try self.write(alloc, @intFromEnum(as_op), line);
             try self.write(alloc, low_part, line);
             try self.write(alloc, high_part, line);
         } else {

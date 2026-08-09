@@ -41,8 +41,14 @@ pub const VirtualMachine = struct {
     }
 
     fn run(self: *Self, alloc: std.mem.Allocator) !void {
+        // Wide is completly artifical instruction
+        // It works rather as a modifer to instruct how many bytes to read after the main instruction
+        // Hence we should skip rendering of the wide in debug mode to show correctly which instruction is main
+        // The main instruction itself will render a label (wide) if it's "extended version" and requires read more from the stack to restore an argument
+        var modifier_wide = false;
+
         while (true) {
-            if (builtin.mode == .Debug) {
+            if (builtin.mode == .Debug and !modifier_wide) {
                 std.debug.print("        ", .{});
 
                 for (self.stack.items) |item| {
@@ -51,7 +57,12 @@ pub const VirtualMachine = struct {
                     std.debug.print("]", .{});
                 }
 
-                std.debug.print("\n", .{});
+                if (self.stack.items.len > 0) {
+                    std.debug.print("\n", .{});
+                } else {
+                    std.debug.print("\r", .{});
+                }
+
                 _ = debug.disassembleInstruction(self.chunk, self.ip - self.chunk.code.items.ptr);
             }
 
@@ -167,23 +178,28 @@ pub const VirtualMachine = struct {
                     self.stack.pop().?.print();
                     std.debug.print("\n", .{});
                 },
-                inline .op_constant, .op_constant_long => |op| {
-                    const value = self.getConstantValue(op);
+                .op_constant => {
+                    defer modifier_wide = false;
+                    const value = self.getConstantValue(modifier_wide);
 
                     try self.stack.append(alloc, value);
                 },
-                inline .op_define_global, .op_define_global_long => |op| {
+                .op_define_global => {
+                    defer modifier_wide = false;
                     const gc = GcAllocator.as(alloc);
-                    const key = self.getConstantValue(op);
+                    const key = self.getConstantValue(modifier_wide);
 
                     const key_str = key.val_obj.as(ObjectString);
                     _ = try gc.globals.insert(alloc, key_str, self.peek(0));
 
                     _ = self.stack.pop();
                 },
-                inline .op_get_global, .op_get_global_long => |op| {
+                .op_get_global => {
+                    defer modifier_wide = false;
                     const gc = GcAllocator.as(alloc);
-                    const key_str = self.getConstantValue(op).val_obj.as(ObjectString);
+                    const val = self.getConstantValue(modifier_wide);
+
+                    const key_str = val.val_obj.as(ObjectString);
 
                     const value = gc.globals.findValue(key_str);
 
@@ -193,9 +209,12 @@ pub const VirtualMachine = struct {
 
                     try self.stack.append(alloc, value.?);
                 },
-                inline .op_set_global, .op_set_global_long => |op| {
+                .op_set_global => {
+                    defer modifier_wide = false;
                     const gc = GcAllocator.as(alloc);
-                    const key_str = self.getConstantValue(op).val_obj.as(ObjectString);
+                    const val = self.getConstantValue(modifier_wide);
+
+                    const key_str = val.val_obj.as(ObjectString);
 
                     const is_new_insert = try gc.globals.insert(alloc, key_str, self.peek(0));
 
@@ -207,6 +226,10 @@ pub const VirtualMachine = struct {
                     }
 
                     // Unique operation in sense (no push, no pop)
+                },
+                .op_wide => {
+                    // Incorporate modifier into the operation loop
+                    modifier_wide = true;
                 },
                 .op_pop => {
                     _ = self.stack.pop();
@@ -230,27 +253,13 @@ pub const VirtualMachine = struct {
         return instruction;
     }
 
-    fn getConstantValue(self: *Self, comptime op: OpCode) Value {
-        comptime {
-            switch (op) {
-                .op_constant, .op_define_global, .op_constant_long, .op_define_global_long, .op_get_global, .op_get_global_long, .op_set_global, .op_set_global_long => {},
-                else => @compileError("Get constant is applicable only for limited range of operations."),
-            }
-        }
+    fn getConstantValue(self: *Self, modifier_wide: bool) Value {
+        var const_index: u16 = self.advance();
 
-        var const_index: u16 = undefined;
+        if (modifier_wide) {
+            const high_part: u16 = self.advance();
 
-        switch (op) {
-            .op_constant, .op_define_global, .op_get_global, .op_set_global => {
-                const_index = self.advance();
-            },
-            .op_constant_long, .op_define_global_long, .op_get_global_long, .op_set_global_long => {
-                const low_part: u8 = self.advance();
-                const_index = self.advance();
-
-                const_index = (const_index << 8) | low_part;
-            },
-            else => unreachable,
+            const_index = (high_part << 8) | const_index;
         }
 
         return self.chunk.values.items[const_index];

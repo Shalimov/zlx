@@ -1,0 +1,21 @@
+Global Variable and lookups
+
+Challenge:
+1. The compiler adds a global variable’s name to the constant table as a string every time an identifier is encountered. It creates a new constant each time, even if that variable name is already in a previous slot in the constant table. That’s wasteful in cases where the same variable is referenced multiple times by the same function. That, in turn, increases the odds of filling up the constant table and running out of slots since we allow only 256 constants in a single chunk.
+
+Optimize this. How does your optimization affect the performance of the compiler compared to the runtime? Is this the right trade-off?
+
+Possible solutions:
+1. Linear check in writeConstantAs (also possible to specify for which command !.op_constant) - might degrade over time cuz of support of 65535 constants.
+2.
+- (chunk) - introduce hashtable for indexes and look up in hashtable if it repeats (256 ballpark initial size per each chunk -> memory consumption)
+- gc_alloc.globals or something there ?.. half baked idea..
+3. Epoch on ObjectStrings (Extend an ObjectString with a const index and compiler_epoch_id to verify if constants are still there)
+
+
+2. Looking up a global variable by name in a hash table each time it is used is pretty slow, even with a good hash table. Can you come up with a more efficient way to store and access global variables without changing the semantics?
+
+Possible solutions:
+- Direct array access (counting sequence alike to DotnetLx Local Vars)
+- Inline cache with Invalidation (After force respace <- shrink/respace)
+- Address-Stable Indirection (Global Pool) -> ObjectString is internalized and address should be stable over a run

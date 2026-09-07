@@ -16,7 +16,7 @@ pub const InterpretError = error{
 
 pub const VirtualMachine = struct {
     const Self = @This();
-    pub const init: Self = .{ .chunk = undefined, .ip = undefined, .stack = .empty, .compiler = .init };
+    pub const init: Self = .{ .chunk = undefined, .ip = undefined, .stack = .empty, .compiler = undefined };
 
     ip: [*]u8,
     chunk: *Chunk,
@@ -203,7 +203,7 @@ pub const VirtualMachine = struct {
                     const value = gc.globals.findValue(key_str);
 
                     if (value == null) {
-                        return self.reportRuntimeError("Variable '{s}' is undefined.", .{key_str.str});
+                        return self.reportRuntimeError("Undefined variable '{s}'.\n", .{key_str.str});
                     }
 
                     try self.stack.append(alloc, value.?);
@@ -221,14 +221,26 @@ pub const VirtualMachine = struct {
                         // if there were no values it crops up after insert
                         // while for interpreation of scripts is fine to keep, it's not good for REPL
                         gc.globals.remove(key_str);
-                        return self.reportRuntimeError("Forbidden to set undefined variable '{s}'.", .{key_str.str});
+                        return self.reportRuntimeError("Undefined variable '{s}'.\n", .{key_str.str});
                     }
 
                     // Unique operation in sense (no push, no pop)
                 },
+                .op_get_local => {
+                    const local_index = self.advance();
+                    try self.stack.append(alloc, self.stack.items[local_index]);
+                },
+                .op_set_local => {
+                    const local_index = self.advance();
+                    self.stack.items[local_index] = self.peek(0);
+                },
                 .op_wide => {
                     // Incorporate modifier into the operation loop
                     modifier_wide = true;
+                },
+                .op_popn => {
+                    const pop_count = self.advance();
+                    self.stack.shrinkRetainingCapacity(self.stack.items.len - pop_count);
                 },
                 .op_pop => {
                     _ = self.stack.pop();

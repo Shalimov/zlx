@@ -69,7 +69,7 @@ pub const Scanner = struct {
         self.start = source.ptr;
         self.current = source.ptr;
         self.eof = source.ptr + source.len;
-        self.line = 0;
+        self.line = 1;
     }
 
     pub fn scanNext(self: *Scanner) Token {

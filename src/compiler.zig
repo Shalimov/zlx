@@ -1,18 +1,19 @@
+// TODO: Introspection of local variable (names disappear during an exection in vm and exist only in compiler)
+// Debugging in this case is combersome (sort this out)
+
 const std = @import("std");
 const builtin = @import("builtin");
 
 const Chunk = @import("chunk.zig").Chunk;
-const OpCode = @import("op_code.zig").OpCode;
-const Value = @import("value.zig").Value;
 const debug = @import("debug.zig");
+const GcAllocator = @import("gc-allocator.zig").GcAllocator;
+const ObjectString = @import("object.zig").ObjectString;
+const OpCode = @import("op_code.zig").OpCode;
 const scn = @import("scanner.zig");
-
 const Scanner = scn.Scanner;
 const Token = scn.Token;
 const TokenType = scn.TokenType;
-
-const ObjectString = @import("object.zig").ObjectString;
-const GcAllocator = @import("gc-allocator.zig").GcAllocator;
+const Value = @import("value.zig").Value;
 
 const Precedence = enum {
     ex_none,
@@ -85,30 +86,44 @@ pub const CompilerError = error{
     ParseError,
 };
 
-pub const Compiler = struct {
-    const Self = @This();
-    const Parser = struct {
-        const ErrorToken = Token{
-            .line = 0,
-            .str = &[_]u8{},
-            .token_type = .token_error,
-        };
-
-        current: Token,
-        previous: Token,
-        had_error: bool,
-        panic_mode: bool,
-
-        pub const init: @This() = .{ .current = ErrorToken, .previous = ErrorToken, .panic_mode = false, .had_error = false };
+const Parser = struct {
+    const ErrorToken = Token{
+        .line = 0,
+        .str = &[_]u8{},
+        .token_type = .token_error,
     };
 
-    pub const init: Self = .{ .compiling_chunk = undefined, .scanner = undefined, .parser = .init };
+    current: Token,
+    previous: Token,
+    had_error: bool,
+    panic_mode: bool,
+
+    pub const init: @This() = .{ .current = ErrorToken, .previous = ErrorToken, .panic_mode = false, .had_error = false };
+};
+
+const LocalVar = struct {
+    name: []const u8,
+    depth: isize,
+};
+
+pub const Compiler = struct {
+    const Self = @This();
+
+    const U8_MAX = std.math.maxInt(u8) + 1;
+
+    locals: [U8_MAX]LocalVar,
+    locals_count: isize,
+    locals_depth: isize,
 
     scanner: Scanner,
     parser: Parser,
     compiling_chunk: *Chunk,
 
     pub fn compile(self: *Compiler, alloc: std.mem.Allocator, source: []const u8, chunk: *Chunk) !void {
+        // Reset compiler to cover multiple runs of it without keeping the state and fall short
+        self.locals_count = 0;
+        self.locals_depth = 0;
+
         self.compiling_chunk = chunk;
         self.scanner.init(source);
 
@@ -126,9 +141,9 @@ pub const Compiler = struct {
         }
     }
 
-    // Statments
+    // Statements
 
-    fn declaration(self: *Compiler, alloc: std.mem.Allocator) !void {
+    fn declaration(self: *Compiler, alloc: std.mem.Allocator) anyerror!void {
         if (self.match(.token_var)) {
             try self.varDeclaration(alloc);
         } else {
@@ -141,10 +156,24 @@ pub const Compiler = struct {
     }
 
     fn varDeclaration(self: *Compiler, alloc: std.mem.Allocator) !void {
-        const chunk = self.currentChunk();
+        const chunk = self.getCurrentChunk();
 
         self.consume(.token_identifier, "Expect variable name.");
-        const var_name = try ObjectString.dupe(alloc, self.parser.previous.str);
+        const var_name_token = self.parser.previous;
+
+        const local_variable_declaration = self.locals_depth > 0;
+
+        if (local_variable_declaration) {
+            var i = self.locals_count - 1;
+
+            while (i >= 0 and self.locals[@intCast(i)].depth == self.locals_depth) : (i -= 1) {
+                if (std.mem.eql(u8, self.locals[@intCast(i)].name, var_name_token.str)) {
+                    self.errorAt(var_name_token, "Already a variable with this name in this scope.");
+                }
+            }
+
+            self.addUninitializedLocal(var_name_token.str);
+        }
 
         if (self.match(.token_equal)) {
             try self.expression(alloc);
@@ -154,16 +183,75 @@ pub const Compiler = struct {
 
         self.consume(.token_semicolon, "Expect ';' after var declaration.");
 
-        try chunk.writeConstantAs(alloc, .op_define_global, .{ .val_obj = var_name.asObject() }, self.parser.previous.line);
+        if (local_variable_declaration) {
+            self.markLastLocalInitialized();
+        } else {
+            const var_name = try ObjectString.dupe(alloc, var_name_token.str);
+            try chunk.writeConstantAs(alloc, .op_define_global, .{ .val_obj = var_name.asObject() }, var_name_token.line);
+        }
     }
 
     fn statement(self: *Compiler, alloc: std.mem.Allocator) !void {
         if (self.match(.token_print)) {
             try self.printStatement(alloc);
+        } else if (self.match(.token_left_brace)) {
+            self.beginScope();
+            try self.blockStatement(alloc);
+            try self.endScope(alloc);
         } else {
             try self.expressionStatement(alloc);
         }
     }
+
+    fn blockStatement(self: *Compiler, alloc: std.mem.Allocator) !void {
+        while (!self.check(.token_right_brace) and !self.check(.token_eof)) {
+            try self.declaration(alloc);
+        }
+
+        self.consume(.token_right_brace, "Expect '}' after block statements.");
+    }
+
+    // Scope and local related code related functions
+
+    fn addUninitializedLocal(self: *Compiler, local_name: []const u8) void {
+        if (self.locals_count == U8_MAX) {
+            self.errorAtPrev("Too many local variables defined.");
+
+            return;
+        }
+
+        self.locals[@intCast(self.locals_count)].name = local_name;
+        self.locals[@intCast(self.locals_count)].depth = -1;
+
+        self.locals_count += 1;
+    }
+
+    fn markLastLocalInitialized(self: *Compiler) void {
+        self.locals[@intCast(self.locals_count - 1)].depth = self.locals_depth;
+    }
+
+    fn beginScope(self: *Compiler) void {
+        self.locals_depth += 1;
+    }
+
+    fn endScope(self: *Compiler, alloc: std.mem.Allocator) !void {
+        const current_scope = self.locals_depth;
+        self.locals_depth -= 1;
+
+        var i = self.locals_count - 1;
+        var pop_count: u8 = 0;
+
+        while (i >= 0 and self.locals[@intCast(i)].depth >= current_scope) : (i -= 1) {
+            pop_count += 1;
+            self.locals_count -= 1;
+        }
+
+        if (pop_count > 0) {
+            try self.emitOpByteArg(alloc, .op_popn, pop_count);
+        }
+    }
+
+    // End scope related functions
 
     fn printStatement(self: *Compiler, alloc: std.mem.Allocator) !void {
         try self.expression(alloc);
@@ -190,12 +278,12 @@ pub const Compiler = struct {
     fn number(self: *Compiler, alloc: std.mem.Allocator, _: bool) !void {
         const const_value: f64 = try std.fmt.parseFloat(f64, self.parser.previous.str);
 
-        var current_chunk = self.currentChunk();
+        var current_chunk = self.getCurrentChunk();
         try current_chunk.writeConstantAs(alloc, .op_constant, Value{ .val_number = const_value }, self.parser.previous.line);
     }
 
     fn string(self: *Compiler, alloc: std.mem.Allocator, _: bool) !void {
-        var current_chunk = self.currentChunk();
+        var current_chunk = self.getCurrentChunk();
         const token = self.parser.previous;
 
         var obj_string = try ObjectString.dupe(alloc, token.str[1 .. token.str.len - 1]);
@@ -244,16 +332,30 @@ pub const Compiler = struct {
     }
 
     fn variable(self: *Compiler, alloc: std.mem.Allocator, can_assign: bool) !void {
-        const current_chunk = self.currentChunk();
+        const current_chunk = self.getCurrentChunk();
         const token = self.parser.previous;
-        const variable_name = try ObjectString.dupe(alloc, token.str);
-        const variable_boxed = Value{ .val_obj = variable_name.asObject() };
 
-        if (can_assign and self.match(.token_equal)) {
-            try self.expression(alloc);
-            try current_chunk.writeConstantAs(alloc, .op_set_global, variable_boxed, token.line);
+        const local_index = self.resolveLocal(token.str);
+
+        if (local_index) |index| {
+            @branchHint(.likely);
+
+            if (can_assign and self.match(.token_equal)) {
+                try self.expression(alloc);
+                try self.emitOpByteArg(alloc, .op_set_local, index);
+            } else {
+                try self.emitOpByteArg(alloc, .op_get_local, index);
+            }
         } else {
-            try current_chunk.writeConstantAs(alloc, .op_get_global, variable_boxed, token.line);
+            const variable_name = try ObjectString.dupe(alloc, token.str);
+            const variable_boxed = Value{ .val_obj = variable_name.asObject() };
+
+            if (can_assign and self.match(.token_equal)) {
+                try self.expression(alloc);
+                try current_chunk.writeConstantAs(alloc, .op_set_global, variable_boxed, token.line);
+            } else {
+                try current_chunk.writeConstantAs(alloc, .op_get_global, variable_boxed, token.line);
+            }
         }
     }
 
@@ -342,6 +444,22 @@ pub const Compiler = struct {
         self.errorAtCurr(msg);
     }
 
+    fn resolveLocal(self: *Compiler, name: []const u8) ?u8 {
+        var i = self.locals_count - 1;
+
+        while (i >= 0) : (i -= 1) {
+            if (std.mem.eql(u8, self.locals[@intCast(i)].name, name)) {
+                if (self.locals[@intCast(i)].depth == -1) {
+                    self.errorAtPrev("Can't read local variable in its own initializer.");
+                }
+
+                return @intCast(i);
+            }
+        }
+
+        return null;
+    }
+
     inline fn check(self: *Compiler, token_type: TokenType) bool {
         return self.parser.current.token_type == token_type;
     }
@@ -349,8 +467,14 @@ pub const Compiler = struct {
     // Emitters
 
     fn emitOpCode(self: *Compiler, alloc: std.mem.Allocator, op: OpCode) !void {
-        var current_chunk = self.currentChunk();
-        return current_chunk.write(alloc, @intFromEnum(op), self.parser.current.line);
+        var current_chunk = self.getCurrentChunk();
+        try current_chunk.write(alloc, @intFromEnum(op), self.parser.current.line);
+    }
+
+    fn emitOpByteArg(self: *Compiler, alloc: std.mem.Allocator, op: OpCode, arg: u8) !void {
+        var current_chunk = self.getCurrentChunk();
+        try current_chunk.write(alloc, @intFromEnum(op), self.parser.current.line);
+        try current_chunk.write(alloc, arg, self.parser.current.line);
     }
 
     fn emitOpCodes(self: *Compiler, alloc: std.mem.Allocator, op1: OpCode, op2: OpCode) !void {
@@ -366,11 +490,11 @@ pub const Compiler = struct {
         try self.emitOpReturn(alloc);
 
         if (builtin.mode == .Debug) {
-            debug.disassembleChunk(self.currentChunk(), "code");
+            debug.disassembleChunk(self.getCurrentChunk(), "code");
         }
     }
 
-    fn currentChunk(self: *Compiler) *Chunk {
+    fn getCurrentChunk(self: *Compiler) *Chunk {
         return self.compiling_chunk;
     }
 

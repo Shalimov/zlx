@@ -9,6 +9,17 @@ fn printSimpleInstruction(name: []const u8, offset: usize) usize {
     return offset + 1;
 }
 
+fn printByteArgInstruction(name: []const u8, chunk: *const Chunk, offset: usize) usize {
+    const local_index = chunk.code.items[offset + 1];
+
+    std.debug.print("{0s: <16} {1d: >4}\n", .{
+        name,
+        local_index,
+    });
+
+    return offset + 2;
+}
+
 fn printConstInstruction(name: []const u8, chunk: *const Chunk, offset: usize, modifier_wide: bool) usize {
     var step: usize = 2;
     var constant_index: u16 = chunk.code.items[offset + 1];
@@ -68,6 +79,10 @@ pub fn disassembleInstruction(chunk: *const Chunk, offset: usize) usize {
         },
         inline .op_not, .op_negate, .op_nil, .op_true, .op_false, .op_equal, .op_less, .op_greater, .op_concat, .op_add, .op_sub, .op_mul, .op_div, .op_print, .op_pop, .op_return => |op| {
             result_offset = printSimpleInstruction(@tagName(op), actual_offset);
+        },
+
+        inline .op_get_local, .op_set_local, .op_popn => |op| {
+            result_offset = printByteArgInstruction(@tagName(op), chunk, actual_offset);
         },
     }
 

@@ -18,6 +18,7 @@ pub const OpCode = enum {
 
     // Special cases
     op_pop,
+    op_popn,
 
     // Wide operations
     op_wide, // modifier that instructs that the next operation will be 2 bytes size
@@ -25,4 +26,8 @@ pub const OpCode = enum {
     op_define_global,
     op_get_global,
     op_set_global,
+    // Note that there is no op_define_local, because locals are comp time definitions
+    // Hence no reasone pass it to VM
+    op_get_local,
+    op_set_local,
 };

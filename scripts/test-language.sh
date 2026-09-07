@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Run the implementation-agnostic language tests in tests/.
 #
-# The test files follow Crafting Interpreters conventions:
+# The test files follow Crafting Interpreters conventions and zlx modifiers:
 #   // expect: output
+#   // @success: output
 #   // expect runtime error: message
 #   // [line N] Error ...
+#   // @failure[: expected error message] (asserts exit code != 0 and optional error message)
 
 set -u
 
@@ -123,7 +125,8 @@ normalize_debug_output() {
 
 expected_output() {
     # Runtime-error expectations are checked separately, not treated as stdout.
-    sed -nE 's@.*//[[:space:]]*expect:[[:space:]]?(.*)$@\1@p' "$1"
+    # Supports both Crafting Interpreters '// expect:' and zlx '// @success:'.
+    sed -nE 's#.*//[[:space:]]*(expect|@success):[[:space:]]?(.*)$#\2#p' "$1"
 }
 
 runtime_expectations() {
@@ -131,7 +134,23 @@ runtime_expectations() {
 }
 
 compile_expectations() {
-    sed -nE 's@^[[:space:]]*//[[:space:]]*(\[line [0-9]+\] Error.*)$@\1@p' "$1"
+    # Matches both standalone '// [line N] Error...' and inline '... // Error at...'
+    perl -ne '
+        if (m{.*//\s*(\[line\s+\d+\]\s+Error.*)}) {
+            print "$1\n";
+        } elsif (m{.*//\s*(Error.*)}) {
+            print "[line $.] $1\n";
+        }
+    ' "$1"
+}
+
+has_failure_modifier() {
+    grep -Eq '//[[:space:]]*@failure' "$1"
+}
+
+failure_expectations() {
+    # Extracts error expectations from '// @failure: <message>'
+    sed -nE 's#.*//[[:space:]]*@failure:?[[:space:]]*(.*)$#\1#p' "$1"
 }
 
 printf '\n%-5s %-8s' 'No.' 'Result'
@@ -169,9 +188,22 @@ for test_file in "${TESTS[@]}"; do
     expected="$(expected_output "$test_file")"
     runtime_errors="$(runtime_expectations "$test_file")"
     compile_errors="$(compile_expectations "$test_file")"
+    failure_errors="$(failure_expectations "$test_file")"
     reason=""
 
-    if [[ -n "$compile_errors" ]]; then
+    if has_failure_modifier "$test_file"; then
+        if ((exit_code == 0)); then
+            reason='expected execution to fail (exit non-zero), but it succeeded'
+        else
+            while IFS= read -r expected_error; do
+                [[ -z "$expected_error" ]] && continue
+                if ! grep -Fq "$expected_error" "$log_file.clean"; then
+                    reason="missing expected error message: $expected_error"
+                    break
+                fi
+            done <<<"$failure_errors"
+        fi
+    elif [[ -n "$compile_errors" ]]; then
         if ((exit_code == 0)); then
             reason='expected a compile error, but execution succeeded'
         else

@@ -45,6 +45,7 @@ pub const TokenType = enum {
     token_super,
     token_this,
     token_var,
+    token_const,
     token_nil,
     token_print,
     // Special case
@@ -216,7 +217,11 @@ pub const Scanner = struct {
     fn inferIdentifierToken(self: *Scanner) TokenType {
         return switch (self.start[0]) {
             'a' => self.checkKeyword(1, "nd", TokenType.token_and),
-            'c' => self.checkKeyword(1, "lass", TokenType.token_class),
+            'c' => if (self.current - self.start > 1) switch (self.start[1]) {
+                'o' => self.checkKeyword(2, "nst", TokenType.token_const),
+                'l' => self.checkKeyword(2, "ass", TokenType.token_class), // Oops
+                else => TokenType.token_identifier,
+            } else TokenType.token_identifier,
             'e' => self.checkKeyword(1, "lse", TokenType.token_else),
             'f' => if (self.current - self.start > 1) switch (self.start[1]) {
                 'a' => self.checkKeyword(2, "lse", TokenType.token_false),
@@ -346,7 +351,7 @@ test "expect parsing keywords" {
         \\ and or class else
         \\ if nil print return
         \\ true this
-        \\ super var while
+        \\ super var const while
         \\ false for fun
     ;
     var scanner: Scanner = undefined;
@@ -364,6 +369,7 @@ test "expect parsing keywords" {
     try expectToken(&scanner, TokenType.token_this, "this");
     try expectToken(&scanner, TokenType.token_super, "super");
     try expectToken(&scanner, TokenType.token_var, "var");
+    try expectToken(&scanner, TokenType.token_var, "const");
     try expectToken(&scanner, TokenType.token_while, "while");
     try expectToken(&scanner, TokenType.token_false, "false");
     try expectToken(&scanner, TokenType.token_for, "for");
@@ -379,7 +385,7 @@ test "expect parsing identifiers" {
         \\ ififif andor
         \\ orand nilable
         \\ printy returny superbowl
-        \\ vario whileboy
+        \\ vario constio whileboy
         \\ truely falseie forly funly
         \\ funfun thisisnotakeyword
     ;
@@ -400,6 +406,7 @@ test "expect parsing identifiers" {
     try expectToken(&scanner, TokenType.token_identifier, "returny");
     try expectToken(&scanner, TokenType.token_identifier, "superbowl");
     try expectToken(&scanner, TokenType.token_identifier, "vario");
+    try expectToken(&scanner, TokenType.token_identifier, "constio");
     try expectToken(&scanner, TokenType.token_identifier, "whileboy");
     try expectToken(&scanner, TokenType.token_identifier, "truely");
     try expectToken(&scanner, TokenType.token_identifier, "falseie");

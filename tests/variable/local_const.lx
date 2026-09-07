@@ -1,0 +1,10 @@
+{
+  const a = 1;
+  print a; // @success: 1
+
+  const b = a + 2;
+  print b; // @success: 3
+
+  const c = a + b + 5;
+  print c; // @success: 9
+}

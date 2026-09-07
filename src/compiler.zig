@@ -74,6 +74,7 @@ const rules = rls: {
     table[@intFromEnum(TokenType.token_super)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_this)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_var)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@intFromEnum(TokenType.token_const)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_nil)] = .{ .prefix = Compiler.literal, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_print)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_error)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
@@ -102,19 +103,24 @@ const Parser = struct {
 };
 
 const LocalVar = struct {
+    const Modifier = packed struct {
+        initialized: bool,
+        mutable: bool,
+    };
+
     name: []const u8,
-    depth: isize,
+    depth: i32,
+    modifier: Modifier,
 };
 
-const U8_MAX = std.math.maxInt(u8) + 1;
-const UNINITIALIZED_VAR = -1;
+const MAX_U8_PLUS1 = std.math.maxInt(u8) + 1;
 
 pub const Compiler = struct {
     const Self = @This();
 
-    locals: [U8_MAX]LocalVar,
-    locals_count: isize,
-    locals_depth: isize,
+    locals: [MAX_U8_PLUS1]LocalVar,
+    locals_count: i32,
+    locals_depth: i32,
 
     scanner: Scanner,
     parser: Parser,
@@ -151,8 +157,10 @@ pub const Compiler = struct {
     // Statements
 
     fn declaration(self: *Compiler, alloc: std.mem.Allocator) anyerror!void {
-        if (self.match(.token_var)) {
-            try self.varDeclaration(alloc);
+        const mutable_var = self.match(.token_var);
+
+        if (mutable_var or self.match(.token_const)) {
+            try self.varDeclaration(alloc, mutable_var);
         } else {
             try self.statement(alloc);
         }
@@ -162,7 +170,7 @@ pub const Compiler = struct {
         }
     }
 
-    fn varDeclaration(self: *Compiler, alloc: std.mem.Allocator) !void {
+    fn varDeclaration(self: *Compiler, alloc: std.mem.Allocator, mutable: bool) !void {
         const chunk = self.getCurrentChunk();
 
         self.consume(.token_identifier, "Expect variable name.");
@@ -179,12 +187,17 @@ pub const Compiler = struct {
                 }
             }
 
-            self.addUninitializedLocal(var_name_token.str);
+            self.addLocal(var_name_token.str, .{ .initialized = false, .mutable = mutable });
         }
 
         if (self.match(.token_equal)) {
             try self.expression(alloc);
         } else {
+            if (!mutable) {
+                self.errorAtPrev("Const should be set explicitly.");
+                return;
+            }
+
             try self.emitOpCode(alloc, .op_nil);
         }
 
@@ -220,21 +233,22 @@ pub const Compiler = struct {
 
     // Scope and local related code related functions
 
-    fn addUninitializedLocal(self: *Compiler, local_name: []const u8) void {
-        if (self.locals_count == U8_MAX) {
+    fn addLocal(self: *Compiler, local_name: []const u8, modifier: LocalVar.Modifier) void {
+        if (self.locals_count == MAX_U8_PLUS1) {
             self.errorAtPrev("Too many local variables defined.");
 
             return;
         }
 
         self.locals[@intCast(self.locals_count)].name = local_name;
-        self.locals[@intCast(self.locals_count)].depth = UNINITIALIZED_VAR;
+        self.locals[@intCast(self.locals_count)].depth = self.locals_depth;
+        self.locals[@intCast(self.locals_count)].modifier = modifier;
 
         self.locals_count += 1;
     }
 
-    fn markLastLocalInitialized(self: *Compiler) void {
-        self.locals[@intCast(self.locals_count - 1)].depth = self.locals_depth;
+    inline fn markLastLocalInitialized(self: *Compiler) void {
+        self.locals[@intCast(self.locals_count - 1)].modifier.initialized = true;
     }
 
     fn beginScope(self: *Compiler) void {
@@ -348,6 +362,10 @@ pub const Compiler = struct {
             @branchHint(.likely);
 
             if (can_assign and self.match(.token_equal)) {
+                if (!self.locals[index].modifier.mutable) {
+                    self.errorAtPrev("Const can not be set after initialization.");
+                }
+
                 try self.expression(alloc);
                 try self.emitOpByteArg(alloc, .op_set_local, index);
             } else {
@@ -410,7 +428,7 @@ pub const Compiler = struct {
             if (self.parser.previous.token_type == .token_semicolon) return;
 
             switch (self.parser.current.token_type) {
-                .token_class, .token_fun, .token_var, .token_for, .token_if, .token_while, .token_print, .token_return => return,
+                .token_class, .token_fun, .token_var, .token_const, .token_for, .token_if, .token_while, .token_print, .token_return => return,
                 else => self.advance(),
             }
         }
@@ -456,7 +474,7 @@ pub const Compiler = struct {
 
         while (i >= 0) : (i -= 1) {
             if (std.mem.eql(u8, self.locals[@intCast(i)].name, name)) {
-                if (self.locals[@intCast(i)].depth == UNINITIALIZED_VAR) {
+                if (!self.locals[@intCast(i)].modifier.initialized) {
                     self.errorAtPrev("Can't read local variable in its own initializer.");
                 }
 

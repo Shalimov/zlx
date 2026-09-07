@@ -1,0 +1,6 @@
+{
+  const a = 1;
+  print a;
+
+  a = 3; // @failure: [line 5] Error at '=': Const can not be set after initialization.
+}

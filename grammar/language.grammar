@@ -1,7 +1,8 @@
-program        -> declaration* EOF ; 
+program        -> declaration* EOF ;
 
 declaration    -> classDecl
                 | varDecl
+                | constDecl
                 | funDecl
                 | statement ;
 
@@ -13,7 +14,7 @@ funDecl        -> "fun" function ;
 
 property       -> IDENTIFIER blockStmt ;
 
-protocol       -> "[" IDENTIFIER "]" "(" parameters? ")" blockStmt 
+protocol       -> "[" IDENTIFIER "]" "(" parameters? ")" blockStmt
 
 function       -> IDENTIFIER "(" parameters? ")" blockStmt ;
 parameters     -> IDENTIFIER ( "," IDENTIFIER )* ;
@@ -29,7 +30,7 @@ statement      -> exprStmt
 
 ifStmt         -> "if" "(" expression ")" statement ( "else" statement )? ;
 
-forStmt        -> "for" "(" ( varDecl | exprStmt | ";" ) expression ";" expression? ")" statement ;
+forStmt        -> "for" "(" ( varDecl | constDecl | exprStmt | ";" ) expression ";" expression? ")" statement ;
 whileStmt      -> "while" "(" expression ")" statement ;
 
 blockStmt      -> "{" declaration* "}" ;

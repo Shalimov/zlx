@@ -1,0 +1,5 @@
+{
+  const a;
+
+  print a; // @failure: [line 2] Error at 'a': Const should be set explicitly.
+}

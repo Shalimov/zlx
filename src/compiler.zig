@@ -106,10 +106,11 @@ const LocalVar = struct {
     depth: isize,
 };
 
+const U8_MAX = std.math.maxInt(u8) + 1;
+const UNINITIALIZED_VAR = -1;
+
 pub const Compiler = struct {
     const Self = @This();
-
-    const U8_MAX = std.math.maxInt(u8) + 1;
 
     locals: [U8_MAX]LocalVar,
     locals_count: isize,
@@ -120,9 +121,7 @@ pub const Compiler = struct {
     compiling_chunk: *Chunk,
 
     pub fn compile(self: *Compiler, alloc: std.mem.Allocator, source: []const u8, chunk: *Chunk) !void {
-        // Reset compiler to cover multiple runs of it without keeping the state and fall short
-        self.locals_count = 0;
-        self.locals_depth = 0;
+        self.init();
 
         self.compiling_chunk = chunk;
         self.scanner.init(source);
@@ -139,6 +138,14 @@ pub const Compiler = struct {
             self.parser.had_error = false;
             return CompilerError.ParseError;
         }
+    }
+
+    inline fn init(self: *Compiler) void {
+        self.locals_count = 0;
+        self.locals_depth = 0;
+
+        self.parser.had_error = false;
+        self.parser.panic_mode = false;
     }
 
     // Statements
@@ -221,7 +228,7 @@ pub const Compiler = struct {
         }
 
         self.locals[@intCast(self.locals_count)].name = local_name;
-        self.locals[@intCast(self.locals_count)].depth = -1;
+        self.locals[@intCast(self.locals_count)].depth = UNINITIALIZED_VAR;
 
         self.locals_count += 1;
     }
@@ -449,7 +456,7 @@ pub const Compiler = struct {
 
         while (i >= 0) : (i -= 1) {
             if (std.mem.eql(u8, self.locals[@intCast(i)].name, name)) {
-                if (self.locals[@intCast(i)].depth == -1) {
+                if (self.locals[@intCast(i)].depth == UNINITIALIZED_VAR) {
                     self.errorAtPrev("Can't read local variable in its own initializer.");
                 }
 

@@ -19,3 +19,10 @@ Possible solutions:
 - Direct array access (counting sequence alike to DotnetLx Local Vars)
 - Inline cache with Invalidation (After force respace <- shrink/respace)
 - Address-Stable Indirection (Global Pool) -> ObjectString is internalized and address should be stable over a run
+
+
+Local Variables
+
+1. Our simple local array makes it easy to calculate the stack slot of each local variable. But it means that when the compiler resolves a reference to a variable, we have to do a linear scan through the array.
+
+2. Const modifier is implemented for local but doesn't work for globals. (Might need to introduce a symbol table and reorganize everything to use indexes - relevant for globals cuz use them by names, however there is complexity in implementation of a mutable recurssion).

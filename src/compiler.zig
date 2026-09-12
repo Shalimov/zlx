@@ -114,6 +114,7 @@ const LocalVar = struct {
 };
 
 const MAX_U8_PLUS1 = std.math.maxInt(u8) + 1;
+const MAX_U16 = std.math.maxInt(u16);
 
 pub const Compiler = struct {
     const Self = @This();
@@ -218,9 +219,33 @@ pub const Compiler = struct {
             self.beginScope();
             try self.blockStatement(alloc);
             try self.endScope(alloc);
+        } else if (self.match(.token_if)) {
+            try self.ifStatement(alloc);
         } else {
             try self.expressionStatement(alloc);
         }
+    }
+
+    fn ifStatement(self: *Compiler, alloc: std.mem.Allocator) anyerror!void {
+        self.consume(.token_left_paren, "Expect '(' after if statement.");
+        try self.expression(alloc);
+        self.consume(.token_right_paren, "Expect ')' after condition.");
+
+        const then_jump_pos = try self.emitJump(alloc, .op_jump_if_false);
+        try self.emitOpCode(alloc, .op_pop);
+
+        try self.statement(alloc);
+
+        const else_jump_pos = try self.emitJump(alloc, .op_jump);
+
+        self.patchJump(then_jump_pos);
+        try self.emitOpCode(alloc, .op_pop);
+
+        if (self.match(.token_else)) {
+            try self.statement(alloc);
+        }
+
+        self.patchJump(else_jump_pos);
     }
 
     fn blockStatement(self: *Compiler, alloc: std.mem.Allocator) !void {
@@ -230,49 +255,6 @@ pub const Compiler = struct {
 
         self.consume(.token_right_brace, "Expect '}' after block statements.");
     }
-
-    // Scope and local related code related functions
-
-    fn addLocal(self: *Compiler, local_name: []const u8, modifier: LocalVar.Modifier) void {
-        if (self.locals_count == MAX_U8_PLUS1) {
-            self.errorAtPrev("Too many local variables defined.");
-
-            return;
-        }
-
-        self.locals[@intCast(self.locals_count)].name = local_name;
-        self.locals[@intCast(self.locals_count)].depth = self.locals_depth;
-        self.locals[@intCast(self.locals_count)].modifier = modifier;
-
-        self.locals_count += 1;
-    }
-
-    inline fn markLastLocalInitialized(self: *Compiler) void {
-        self.locals[@intCast(self.locals_count - 1)].modifier.initialized = true;
-    }
-
-    fn beginScope(self: *Compiler) void {
-        self.locals_depth += 1;
-    }
-
-    fn endScope(self: *Compiler, alloc: std.mem.Allocator) !void {
-        const current_scope = self.locals_depth;
-        self.locals_depth -= 1;
-
-        var i = self.locals_count - 1;
-        var pop_count: u8 = 0;
-
-        while (i >= 0 and self.locals[@intCast(i)].depth >= current_scope) : (i -= 1) {
-            pop_count += 1;
-            self.locals_count -= 1;
-        }
-
-        if (pop_count > 0) {
-            try self.emitOpByteArg(alloc, .op_popn, pop_count);
-        }
-    }
-
-    // End scope related functions
 
     fn printStatement(self: *Compiler, alloc: std.mem.Allocator) !void {
         try self.expression(alloc);
@@ -419,6 +401,73 @@ pub const Compiler = struct {
         }
     }
 
+    // Jumps
+
+    fn emitJump(self: *Compiler, alloc: std.mem.Allocator, comptime op_code: OpCode) !u16 {
+        if (!(op_code == .op_jump_if_false or op_code == .op_jump)) {
+            @compileError("Expect only jump related operations.");
+        }
+
+        try self.emitOp2ByteArgs(alloc, op_code, 0xFF, 0xFF);
+
+        return @intCast(self.getCurrentChunk().code.items.len - 2);
+    }
+
+    fn patchJump(self: *Compiler, jump_op_offset: u16) void {
+        const items = self.getCurrentChunk().code.items;
+        const current_jump_pos = items.len - jump_op_offset - 2;
+
+        if (jump_op_offset > MAX_U16) {
+            self.errorAtCurr("Too many code lines to jump over.");
+        }
+
+        items[jump_op_offset] = @intCast(current_jump_pos & 0xFF);
+        items[jump_op_offset + 1] = @intCast((current_jump_pos >> 8) & 0xFF);
+    }
+
+    // Scope and local related code related functions
+
+    fn addLocal(self: *Compiler, local_name: []const u8, modifier: LocalVar.Modifier) void {
+        if (self.locals_count == MAX_U8_PLUS1) {
+            self.errorAtPrev("Too many local variables defined.");
+
+            return;
+        }
+
+        self.locals[@intCast(self.locals_count)].name = local_name;
+        self.locals[@intCast(self.locals_count)].depth = self.locals_depth;
+        self.locals[@intCast(self.locals_count)].modifier = modifier;
+
+        self.locals_count += 1;
+    }
+
+    inline fn markLastLocalInitialized(self: *Compiler) void {
+        self.locals[@intCast(self.locals_count - 1)].modifier.initialized = true;
+    }
+
+    fn beginScope(self: *Compiler) void {
+        self.locals_depth += 1;
+    }
+
+    fn endScope(self: *Compiler, alloc: std.mem.Allocator) !void {
+        const current_scope = self.locals_depth;
+        self.locals_depth -= 1;
+
+        var i = self.locals_count - 1;
+        var pop_count: u8 = 0;
+
+        while (i >= 0 and self.locals[@intCast(i)].depth >= current_scope) : (i -= 1) {
+            pop_count += 1;
+            self.locals_count -= 1;
+        }
+
+        if (pop_count > 0) {
+            try self.emitOpByteArg(alloc, .op_popn, pop_count);
+        }
+    }
+
+    // End scope related functions
+
     // Synchronisation
 
     fn synchronization(self: *Compiler) void {
@@ -500,6 +549,13 @@ pub const Compiler = struct {
         var current_chunk = self.getCurrentChunk();
         try current_chunk.write(alloc, @intFromEnum(op), self.parser.current.line);
         try current_chunk.write(alloc, arg, self.parser.current.line);
+    }
+
+    fn emitOp2ByteArgs(self: *Compiler, alloc: std.mem.Allocator, op: OpCode, arg: u8, arg2: u8) !void {
+        var current_chunk = self.getCurrentChunk();
+        try current_chunk.write(alloc, @intFromEnum(op), self.parser.current.line);
+        try current_chunk.write(alloc, arg, self.parser.current.line);
+        try current_chunk.write(alloc, arg2, self.parser.current.line);
     }
 
     fn emitOpCodes(self: *Compiler, alloc: std.mem.Allocator, op1: OpCode, op2: OpCode) !void {

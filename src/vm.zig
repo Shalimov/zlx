@@ -245,6 +245,25 @@ pub const VirtualMachine = struct {
                 .op_pop => {
                     _ = self.stack.pop();
                 },
+
+                // Jumps
+
+                .op_jump_if_false => {
+                    const jump_pos = self.readU16Arg();
+
+                    if (self.peek(0).isFalsy()) {
+                        self.ip += jump_pos;
+                    }
+                },
+
+                .op_jump => {
+                    const jump_pos = self.readU16Arg();
+
+                    self.ip += jump_pos;
+                },
+
+                // End of jumps
+
                 .op_return => {
                     // End of an interpretation loop
                     return;
@@ -262,6 +281,13 @@ pub const VirtualMachine = struct {
         self.ip += 1;
 
         return instruction;
+    }
+
+    inline fn readU16Arg(self: *Self) u16 {
+        const lower_part: u16 = self.advance();
+        const high_part: u16 = self.advance();
+
+        return (high_part << 8) | lower_part;
     }
 
     fn getConstantValue(self: *Self, modifier_wide: bool) Value {

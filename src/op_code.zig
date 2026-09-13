@@ -22,7 +22,8 @@ pub const OpCode = enum {
 
     op_jump_if_true,
     op_jump_if_false,
-    op_jump,
+    op_jump_frwd,
+    op_jump_bkwd,
 
     // Wide operations
     op_wide, // modifier that instructs that the next operation will be 2 bytes size

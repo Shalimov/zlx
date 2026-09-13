@@ -22,9 +22,9 @@ fn printJumpInstruction(name: []const u8, chunk: *const Chunk, offset: usize, si
         @compileError("Sign argument should be 1 or -1.");
     }
 
-    const jump_offset = (@as(u16, chunk.code.items[offset + 2]) << 8) | chunk.code.items[offset + 1];
+    const jump_offset = (@as(i32, chunk.code.items[offset + 2]) << 8) | chunk.code.items[offset + 1];
 
-    std.debug.print("{0s: <18} {1d: >4} -> {2d}\n", .{ name, offset, offset + 3 + jump_offset * sign });
+    std.debug.print("{0s: <18} {1d: >4} -> {2d}\n", .{ name, offset, @as(i128, offset) + 3 + jump_offset * sign });
 
     return offset + 3;
 }
@@ -95,8 +95,10 @@ pub fn disassembleInstruction(chunk: *const Chunk, offset: usize) usize {
             result_offset = printByteArgInstruction(@tagName(op), chunk, actual_offset);
         },
 
-        inline .op_jump_if_true, .op_jump_if_false, .op_jump => |op| {
-            result_offset = printJumpInstruction(@tagName(op), chunk, actual_offset, 1);
+        inline .op_jump_if_true, .op_jump_if_false, .op_jump_frwd, .op_jump_bkwd => |op| {
+            const sign = if (op == .op_jump_bkwd) -1 else 1;
+
+            result_offset = printJumpInstruction(@tagName(op), chunk, actual_offset, sign);
         },
     }
 

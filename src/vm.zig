@@ -264,10 +264,16 @@ pub const VirtualMachine = struct {
                     }
                 },
 
-                .op_jump => {
+                .op_jump_frwd => {
                     const jump_pos = self.readU16Arg();
 
                     self.ip += jump_pos;
+                },
+
+                .op_jump_bkwd => {
+                    const jump_pos = self.readU16Arg();
+
+                    self.ip -= jump_pos;
                 },
 
                 // End of jumps

@@ -248,6 +248,14 @@ pub const VirtualMachine = struct {
 
                 // Jumps
 
+                .op_jump_if_true => {
+                    const jump_pos = self.readU16Arg();
+
+                    if (!self.peek(0).isFalsy()) {
+                        self.ip += jump_pos;
+                    }
+                },
+
                 .op_jump_if_false => {
                     const jump_pos = self.readU16Arg();
 

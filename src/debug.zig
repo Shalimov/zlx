@@ -95,7 +95,7 @@ pub fn disassembleInstruction(chunk: *const Chunk, offset: usize) usize {
             result_offset = printByteArgInstruction(@tagName(op), chunk, actual_offset);
         },
 
-        inline .op_jump_if_false, .op_jump => |op| {
+        inline .op_jump_if_true, .op_jump_if_false, .op_jump => |op| {
             result_offset = printJumpInstruction(@tagName(op), chunk, actual_offset, 1);
         },
     }

@@ -62,8 +62,8 @@ const rules = rls: {
     table[@intFromEnum(TokenType.token_number)] = .{ .prefix = Compiler.number, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_true)] = .{ .prefix = Compiler.literal, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_false)] = .{ .prefix = Compiler.literal, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_or)] = .{ .prefix = null, .infix = null, .precedence = .ex_or };
-    table[@intFromEnum(TokenType.token_and)] = .{ .prefix = null, .infix = null, .precedence = .ex_and };
+    table[@intFromEnum(TokenType.token_or)] = .{ .prefix = null, .infix = Compiler.logicOr, .precedence = .ex_or };
+    table[@intFromEnum(TokenType.token_and)] = .{ .prefix = null, .infix = Compiler.logicAnd, .precedence = .ex_and };
     table[@intFromEnum(TokenType.token_if)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_else)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_for)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
@@ -299,6 +299,24 @@ pub const Compiler = struct {
         self.consume(.token_right_paren, "Expect ')' after expression.");
     }
 
+    fn logicAnd(self: *Compiler, alloc: std.mem.Allocator, _: bool) !void {
+        const end_jump = try self.emitJump(alloc, .op_jump_if_false);
+        try self.emitOpCode(alloc, .op_pop);
+
+        try self.parsePrecedence(alloc, .ex_and);
+
+        self.patchJump(end_jump);
+    }
+
+    fn logicOr(self: *Compiler, alloc: std.mem.Allocator, _: bool) !void {
+        const end_jump = try self.emitJump(alloc, .op_jump_if_true);
+        try self.emitOpCode(alloc, .op_pop);
+
+        try self.parsePrecedence(alloc, .ex_or);
+
+        self.patchJump(end_jump);
+    }
+
     fn binary(self: *Compiler, alloc: std.mem.Allocator, _: bool) !void {
         const op_type = self.parser.previous.token_type;
         const precedence = rules[@intFromEnum(op_type)].precedence;
@@ -404,8 +422,9 @@ pub const Compiler = struct {
     // Jumps
 
     fn emitJump(self: *Compiler, alloc: std.mem.Allocator, comptime op_code: OpCode) !u16 {
-        if (!(op_code == .op_jump_if_false or op_code == .op_jump)) {
-            @compileError("Expect only jump related operations.");
+        switch (op_code) {
+            .op_jump_if_true, .op_jump_if_false, .op_jump => {},
+            else => @compileError("Expect only jump related operations."),
         }
 
         try self.emitOp2ByteArgs(alloc, op_code, 0xFF, 0xFF);

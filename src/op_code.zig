@@ -20,6 +20,7 @@ pub const OpCode = enum {
     op_pop,
     op_popn,
 
+    op_jump_if_true,
     op_jump_if_false,
     op_jump,
 

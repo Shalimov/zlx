@@ -298,7 +298,7 @@ fn expectEof(scanner: *Scanner) !void {
 }
 
 test "expect parsing simple combination of tokenw with 1-2 chars" {
-    const source = "{} () [] > < = ! . , ; >= <= != == + - *";
+    const source = "{} () [] > < = ! . , ; >= <= != == + ++ - *";
     var scanner: Scanner = undefined;
     scanner.init(source);
 
@@ -320,6 +320,7 @@ test "expect parsing simple combination of tokenw with 1-2 chars" {
     try expectToken(&scanner, TokenType.token_bang_equal, "!=");
     try expectToken(&scanner, TokenType.token_equal_equal, "==");
     try expectToken(&scanner, TokenType.token_plus, "+");
+    try expectToken(&scanner, TokenType.token_plus_plus, "++");
     try expectToken(&scanner, TokenType.token_minus, "-");
     try expectToken(&scanner, TokenType.token_star, "*");
     try expectEof(&scanner);
@@ -369,7 +370,7 @@ test "expect parsing keywords" {
     try expectToken(&scanner, TokenType.token_this, "this");
     try expectToken(&scanner, TokenType.token_super, "super");
     try expectToken(&scanner, TokenType.token_var, "var");
-    try expectToken(&scanner, TokenType.token_var, "const");
+    try expectToken(&scanner, TokenType.token_const, "const");
     try expectToken(&scanner, TokenType.token_while, "while");
     try expectToken(&scanner, TokenType.token_false, "false");
     try expectToken(&scanner, TokenType.token_for, "for");

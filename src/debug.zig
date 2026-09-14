@@ -87,15 +87,38 @@ pub fn disassembleInstruction(chunk: *const Chunk, offset: usize) usize {
             wide = false;
         },
 
-        inline .op_not, .op_negate, .op_nil, .op_true, .op_false, .op_equal, .op_less, .op_greater, .op_concat, .op_add, .op_sub, .op_mul, .op_div, .op_print, .op_pop, .op_return => |op| {
+        inline .op_not,
+        .op_negate,
+        .op_nil,
+        .op_true,
+        .op_false,
+        .op_equal,
+        .op_less,
+        .op_greater,
+        .op_concat,
+        .op_add,
+        .op_sub,
+        .op_mul,
+        .op_div,
+        .op_print,
+        .op_pop,
+        .op_return,
+        => |op| {
             result_offset = printSimpleInstruction(@tagName(op), actual_offset);
         },
 
-        inline .op_get_local, .op_set_local, .op_popn => |op| {
+        inline .op_get_local,
+        .op_set_local,
+        .op_popn,
+        => |op| {
             result_offset = printByteArgInstruction(@tagName(op), chunk, actual_offset);
         },
 
-        inline .op_jump_if_true, .op_jump_if_false, .op_jump_frwd, .op_jump_bkwd => |op| {
+        inline .op_jump_if_true,
+        .op_jump_if_false,
+        .op_jump_frwd,
+        .op_jump_bkwd,
+        => |op| {
             const sign = if (op == .op_jump_bkwd) -1 else 1;
 
             result_offset = printJumpInstruction(@tagName(op), chunk, actual_offset, sign);

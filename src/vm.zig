@@ -173,6 +173,20 @@ pub const VirtualMachine = struct {
 
                     try self.stack.append(alloc, Value{ .val_number = a / b });
                 },
+                .op_range => {
+                    if (self.peek(0) != .val_number or self.peek(1) != .val_number) {
+                        return self.reportRuntimeError("Operands must be numbers\n", .{});
+                    }
+
+                    const b = self.stack.pop().?.val_number;
+                    const a = self.stack.pop().?.val_number;
+
+                    if (!isRangeInteger(a) or !isRangeInteger(b)) {
+                        return self.reportRuntimeError("Range bounds must be non-negative integers.\n", .{});
+                    }
+
+                    try self.stack.append(alloc, Value{ .val_range = .{ .start = @intFromFloat(a), .end = @intFromFloat(b) } });
+                },
                 .op_print => {
                     self.stack.pop().?.print();
                     std.debug.print("\n", .{});
@@ -284,6 +298,10 @@ pub const VirtualMachine = struct {
                 },
             }
         }
+    }
+
+    inline fn isRangeInteger(value: f64) bool {
+        return value >= 0 and value <= std.math.maxInt(u32) and @trunc(value) == value;
     }
 
     inline fn peek(self: *Self, distance: usize) Value {

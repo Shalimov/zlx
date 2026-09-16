@@ -3,6 +3,7 @@ pub const OpCode = enum {
     op_not,
     op_nil,
     op_true,
+    op_range,
     op_equal,
     op_less,
     op_greater,

@@ -92,6 +92,7 @@ pub fn disassembleInstruction(chunk: *const Chunk, offset: usize) usize {
         .op_nil,
         .op_true,
         .op_false,
+        .op_range,
         .op_equal,
         .op_less,
         .op_greater,

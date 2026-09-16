@@ -22,6 +22,7 @@ const Precedence = enum {
     ex_and, // and
     ex_equality, // == !=
     ex_comparison, // < > <= >=
+    ex_range, // x..y
     ex_term, // + -
     ex_factor, // * /
     ex_unary, // ! -
@@ -43,6 +44,7 @@ const rules = rls: {
     table[@intFromEnum(TokenType.token_right_brace)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_comma)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_dot)] = .{ .prefix = null, .infix = null, .precedence = .ex_call };
+    table[@intFromEnum(TokenType.token_dot_dot)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_range };
     table[@intFromEnum(TokenType.token_minus)] = .{ .prefix = Compiler.unary, .infix = Compiler.binary, .precedence = .ex_term };
     table[@intFromEnum(TokenType.token_plus)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_term };
     table[@intFromEnum(TokenType.token_plus_plus)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_term };
@@ -64,6 +66,7 @@ const rules = rls: {
     table[@intFromEnum(TokenType.token_false)] = .{ .prefix = Compiler.literal, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_or)] = .{ .prefix = null, .infix = Compiler.logicOr, .precedence = .ex_or };
     table[@intFromEnum(TokenType.token_and)] = .{ .prefix = null, .infix = Compiler.logicAnd, .precedence = .ex_and };
+    table[@intFromEnum(TokenType.token_in)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_if)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_else)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_for)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
@@ -343,6 +346,7 @@ pub const Compiler = struct {
         try self.parsePrecedence(alloc, @enumFromInt(@intFromEnum(precedence) + 1));
 
         try switch (op_type) {
+            .token_dot_dot => self.emitOp(alloc, .op_range),
             .token_plus => self.emitOp(alloc, .op_add),
             .token_plus_plus => self.emitOp(alloc, .op_concat),
             .token_minus => self.emitOp(alloc, .op_sub),

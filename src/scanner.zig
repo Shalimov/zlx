@@ -10,13 +10,14 @@ pub const TokenType = enum {
     token_left_brace,
     token_right_brace,
     token_comma,
-    token_dot,
     token_minus,
     token_plus,
     token_semicolon,
     token_slash,
     token_star,
     // One or two character tokens.
+    token_dot,
+    token_dot_dot,
     token_plus_plus,
     token_bang,
     token_bang_equal,
@@ -33,6 +34,7 @@ pub const TokenType = enum {
     // Keywords.
     token_true,
     token_false,
+    token_in,
     token_or,
     token_and,
     token_if,
@@ -93,11 +95,12 @@ pub const Scanner = struct {
             ')' => self.makeToken(TokenType.token_right_paren),
             ';' => self.makeToken(TokenType.token_semicolon),
             ',' => self.makeToken(TokenType.token_comma),
-            '.' => self.makeToken(TokenType.token_dot),
 
             '-' => self.makeToken(TokenType.token_minus),
             '*' => self.makeToken(TokenType.token_star),
             '/' => self.makeToken(TokenType.token_slash),
+
+            '.' => self.makeToken(if (self.match('.')) TokenType.token_dot_dot else TokenType.token_dot),
             '+' => self.makeToken(if (self.match('+')) TokenType.token_plus_plus else TokenType.token_plus),
 
             '<' => self.makeToken(if (self.match('=')) TokenType.token_less_equal else TokenType.token_less),
@@ -229,7 +232,11 @@ pub const Scanner = struct {
                 'u' => self.checkKeyword(2, "n", TokenType.token_fun),
                 else => TokenType.token_identifier,
             } else TokenType.token_identifier,
-            'i' => self.checkKeyword(1, "f", TokenType.token_if),
+            'i' => if (self.current - self.start > 1) switch (self.start[1]) {
+                'f' => self.checkKeyword(2, "", TokenType.token_if),
+                'n' => self.checkKeyword(2, "", TokenType.token_in),
+                else => TokenType.token_identifier,
+            } else TokenType.token_identifier,
             'n' => self.checkKeyword(1, "il", TokenType.token_nil),
             'o' => self.checkKeyword(1, "r", TokenType.token_or),
             'p' => self.checkKeyword(1, "rint", TokenType.token_print),
@@ -298,7 +305,7 @@ fn expectEof(scanner: *Scanner) !void {
 }
 
 test "expect parsing simple combination of tokenw with 1-2 chars" {
-    const source = "{} () [] > < = ! . , ; >= <= != == + ++ - *";
+    const source = "{} () [] > < = ! . .. , ; >= <= != == + ++ - *";
     var scanner: Scanner = undefined;
     scanner.init(source);
 
@@ -313,6 +320,7 @@ test "expect parsing simple combination of tokenw with 1-2 chars" {
     try expectToken(&scanner, TokenType.token_equal, "=");
     try expectToken(&scanner, TokenType.token_bang, "!");
     try expectToken(&scanner, TokenType.token_dot, ".");
+    try expectToken(&scanner, TokenType.token_dot_dot, "..");
     try expectToken(&scanner, TokenType.token_comma, ",");
     try expectToken(&scanner, TokenType.token_semicolon, ";");
     try expectToken(&scanner, TokenType.token_greater_equal, ">=");
@@ -350,7 +358,7 @@ test "expect paraing number tokens" {
 test "expect parsing keywords" {
     const source =
         \\ and or class else
-        \\ if nil print return
+        \\ if in nil print return
         \\ true this
         \\ super var const while
         \\ false for fun
@@ -363,6 +371,7 @@ test "expect parsing keywords" {
     try expectToken(&scanner, TokenType.token_class, "class");
     try expectToken(&scanner, TokenType.token_else, "else");
     try expectToken(&scanner, TokenType.token_if, "if");
+    try expectToken(&scanner, TokenType.token_in, "in");
     try expectToken(&scanner, TokenType.token_nil, "nil");
     try expectToken(&scanner, TokenType.token_print, "print");
     try expectToken(&scanner, TokenType.token_return, "return");
@@ -383,7 +392,7 @@ test "expect parsing identifiers" {
     const keyword_src =
         \\ words is here
         \\ classy elsewhere
-        \\ ififif andor
+        \\ ififif ininin andor
         \\ orand nilable
         \\ printy returny superbowl
         \\ vario constio whileboy
@@ -400,6 +409,7 @@ test "expect parsing identifiers" {
     try expectToken(&scanner, TokenType.token_identifier, "classy");
     try expectToken(&scanner, TokenType.token_identifier, "elsewhere");
     try expectToken(&scanner, TokenType.token_identifier, "ififif");
+    try expectToken(&scanner, TokenType.token_identifier, "ininin");
     try expectToken(&scanner, TokenType.token_identifier, "andor");
     try expectToken(&scanner, TokenType.token_identifier, "orand");
     try expectToken(&scanner, TokenType.token_identifier, "nilable");

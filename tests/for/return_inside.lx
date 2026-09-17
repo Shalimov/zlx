@@ -1,5 +1,5 @@
 fun f() {
-  for (;;) {
+  for (var iteration in 0..1) {
     var i = "i";
     return i;
   }

@@ -1,2 +1,2 @@
 // [line 2] Error at 'class': Expect expression.
-for (;;) class Foo {}
+for (var i in 0..1) class Foo {}

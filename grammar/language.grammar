@@ -30,7 +30,7 @@ statement      -> exprStmt
 
 ifStmt         -> "if" "(" expression ")" statement ( "else" statement )? ;
 
-forStmt        -> "for" "(" ( "const" ) IDENTIFIER  "in" expression ")" statement ;
+forStmt        -> "for" "(" ( "var" ) IDENTIFIER "in" expression..=?expression ")" statement ;
 whileStmt      -> "while" "(" expression ")" statement ;
 loopStmt       -> "loop" statement ;
 
@@ -52,8 +52,7 @@ logicAnd      -> ternary "and" ternary ;
 ternary        -> equality ( "?" ternary ":" ternary )? ;
 
 equality       -> comparison ( ( "!=" | "==" ) comparison )* ;
-comparison     -> range ( ( ">" | ">=" | "<" | "<=" ) range )* ;
-range          -> term ( ".." term ) ? ;
+comparison     -> term ( ( ">" | ">=" | "<" | "<=" ) term )* ;
 
 term           -> factor ( ( "-" | "+" ) factor )* ;
 factor         -> unary ( ( "/" | "*" ) unary )* ;

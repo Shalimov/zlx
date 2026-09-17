@@ -2,7 +2,7 @@
   var i = "before";
 
   // New variable is in inner scope.
-  for (var i = 0; i < 1; i = i + 1) {
+  for (var i in 0..1) {
     print i; // expect: 0
 
     // Loop body is in second inner scope.
@@ -13,14 +13,17 @@
 
 {
   // New variable shadows outer variable.
-  for (var i = 0; i > 0; i = i + 1) {}
+  for (var i in 0..0) {}
 
   // Goes out of scope after loop.
   var i = "after";
   print i; // expect: after
 
-  // Can reuse an existing variable.
-  for (i = 0; i < 1; i = i + 1) {
+  // Loop variable can shadow an existing variable.
+  for (var i in 0..1) {
     print i; // expect: 0
   }
+
+  // Existing variable is unchanged after the loop.
+  print i; // expect: after
 }

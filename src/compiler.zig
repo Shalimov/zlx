@@ -22,7 +22,6 @@ const Precedence = enum {
     ex_and, // and
     ex_equality, // == !=
     ex_comparison, // < > <= >=
-    ex_range, // x..y
     ex_term, // + -
     ex_factor, // * /
     ex_unary, // ! -
@@ -44,7 +43,7 @@ const rules = rls: {
     table[@intFromEnum(TokenType.token_right_brace)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_comma)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_dot)] = .{ .prefix = null, .infix = null, .precedence = .ex_call };
-    table[@intFromEnum(TokenType.token_dot_dot)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_range };
+    table[@intFromEnum(TokenType.token_dot_dot)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
     table[@intFromEnum(TokenType.token_minus)] = .{ .prefix = Compiler.unary, .infix = Compiler.binary, .precedence = .ex_term };
     table[@intFromEnum(TokenType.token_plus)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_term };
     table[@intFromEnum(TokenType.token_plus_plus)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_term };
@@ -226,6 +225,8 @@ pub const Compiler = struct {
             try self.ifStatement(alloc);
         } else if (self.match(.token_while)) {
             try self.whileStatement(alloc);
+        } else if (self.match(.token_for)) {
+            try self.forStatement(alloc);
         } else {
             try self.expressionStatement(alloc);
         }
@@ -268,6 +269,60 @@ pub const Compiler = struct {
 
         self.patchJump(exit_jump);
         try self.emitOp(alloc, .op_pop);
+    }
+
+    // A lot of optimization is possible here:
+    // 1. operations with pop - included
+    // 2. increment operations (with up to 255 step)
+    fn forStatement(self: *Compiler, alloc: std.mem.Allocator) anyerror!void {
+        self.beginScope();
+
+        self.consume(.token_left_paren, "Expect '(' after while statement.");
+        self.consume(.token_var, "Expect only mutable variable for the loop indexer.");
+        self.consume(.token_identifier, "Expect indexer name.");
+        const indexer_name_token = self.parser.previous;
+
+        self.consume(.token_in, "Expect 'in' operator for the indexer expression.");
+
+        self.addLocal(indexer_name_token.str, .{ .initialized = false, .mutable = true });
+        try self.expression(alloc);
+        self.markLastLocalInitialized();
+
+        const current_chunk = self.getCurrentChunk();
+        const indexer = self.resolveLocal(indexer_name_token.str).?;
+        const loop_start_pos = current_chunk.code.items.len;
+
+        try self.emitOpByteArg(alloc, .op_get_local, indexer);
+
+        self.consume(.token_dot_dot, "Expect '..' range expression.");
+
+        const comparison_op = if (self.match(.token_equal)) OpCode.op_less_equal else OpCode.op_less;
+
+        try self.expression(alloc);
+
+        self.consume(.token_right_paren, "Expect ')' after condition.");
+
+        try self.emitOp(alloc, comparison_op);
+        const exit_jump = try self.emitJump(alloc, .op_jump_if_false);
+        try self.emitOp(alloc, .op_pop);
+
+        try self.statement(alloc);
+
+        // --- one increment op can replace all of them
+        try current_chunk.writeConstantAs(alloc, .op_constant, .with_inc_1, self.parser.current.line);
+        try self.emitOpByteArg(alloc, .op_get_local, indexer);
+        try self.emitOp(alloc, .op_add);
+        try self.emitOpByteArg(alloc, .op_set_local, indexer);
+        try self.emitOp(alloc, .op_pop);
+        // --- end
+
+        try self.emitLoop(alloc, loop_start_pos);
+
+        self.patchJump(exit_jump);
+
+        try self.emitOp(alloc, .op_pop);
+
+        try self.endScope(alloc);
     }
 
     fn blockStatement(self: *Compiler, alloc: std.mem.Allocator) !void {
@@ -346,7 +401,6 @@ pub const Compiler = struct {
         try self.parsePrecedence(alloc, @enumFromInt(@intFromEnum(precedence) + 1));
 
         try switch (op_type) {
-            .token_dot_dot => self.emitOp(alloc, .op_range),
             .token_plus => self.emitOp(alloc, .op_add),
             .token_plus_plus => self.emitOp(alloc, .op_concat),
             .token_minus => self.emitOp(alloc, .op_sub),
@@ -354,10 +408,10 @@ pub const Compiler = struct {
             .token_slash => self.emitOp(alloc, .op_div),
             .token_equal_equal => self.emitOp(alloc, .op_equal),
             .token_less => self.emitOp(alloc, .op_less),
+            .token_less_equal => self.emitOp(alloc, .op_less_equal),
             .token_greater => self.emitOp(alloc, .op_greater),
+            .token_greater_equal => self.emitOp(alloc, .op_greater_equal),
             .token_bang_equal => self.emitOps(alloc, .op_equal, .op_not),
-            .token_less_equal => self.emitOps(alloc, .op_greater, .op_not),
-            .token_greater_equal => self.emitOps(alloc, .op_less, .op_not),
             else => unreachable,
         };
     }

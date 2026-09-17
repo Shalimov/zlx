@@ -1,34 +1,157 @@
-Global Variable and lookups
+Challenges Roadmap
+==================
+
+1. Names, Variables, and Resolution
+-----------------------------------
+
+1.1 Deduplicate global-name constants
 
 Challenge:
-1. The compiler adds a global variable’s name to the constant table as a string every time an identifier is encountered. It creates a new constant each time, even if that variable name is already in a previous slot in the constant table. That’s wasteful in cases where the same variable is referenced multiple times by the same function. That, in turn, increases the odds of filling up the constant table and running out of slots since we allow only 256 constants in a single chunk.
+The compiler adds a global variable's name to the constant table every time the
+identifier is encountered. Repeated references to the same global therefore
+create duplicate string constants. This wastes space and increases the chance
+of exhausting the constant table.
 
-Optimize this. How does your optimization affect the performance of the compiler compared to the runtime? Is this the right trade-off?
+Questions:
+- How does deduplication affect compiler performance versus runtime performance?
+- Is the additional compiler complexity and memory usage a worthwhile trade-off?
 
-Possible solutions:
-1. Linear check in writeConstantAs (also possible to specify for which command !.op_constant) - might degrade over time cuz of support of 65535 constants.
-2.
-- (chunk) - introduce hashtable for indexes and look up in hashtable if it repeats (256 ballpark initial size per each chunk -> memory consumption)
-- gc_alloc.globals or something there ?.. half baked idea..
-3. Epoch on ObjectStrings (Extend an ObjectString with a const index and compiler_epoch_id to verify if constants are still there)
+Possible approaches:
+- Search for an existing value in Chunk.writeConstantAs(). A linear search may
+  degrade as chunks approach the 65,535-constant limit, and deduplication may
+  need to exclude ordinary op_constant values.
+- Maintain a per-chunk hash table from global names to constant indexes. This
+  improves lookup time at the cost of memory for every chunk.
+- Store a constant index and compiler epoch on interned ObjectString values.
+  The epoch would verify that the cached index belongs to the active chunk.
+- Investigate whether the GC allocator's global-name interning can participate
+  without coupling runtime global storage to compilation state.
+
+1.2 Optimize global-variable lookup
+
+Challenge:
+Looking up a global variable by name in a hash table every time it is used is
+slow, even with a good hash table. Find a more efficient representation without
+changing language semantics.
+
+Possible approaches:
+- Direct array access using assigned global slots, similar to local variables.
+- Inline caches with invalidation after table resize or compaction.
+- Address-stable indirection through a global pool. Interned ObjectString
+  addresses should remain stable during a run.
+
+1.3 Optimize local-variable resolution
+
+Challenge:
+The fixed local array makes stack-slot calculation simple, but resolving a local
+reference requires a linear scan through the array.
+
+Possible approaches:
+- Maintain a scope-aware name-to-slot index alongside the ordered local array.
+- Measure whether an index improves realistic compilation workloads enough to
+  justify its bookkeeping and memory cost.
+
+1.4 Support const globals
+
+Challenge:
+The const modifier is enforced for locals but not globals. Global const support
+likely requires symbol metadata independent of the runtime value table.
+
+Considerations:
+- A compiler symbol table may allow globals to be addressed by indexes instead
+  of names.
+- Mutable recursion and declarations that refer to themselves complicate when
+  a global symbol becomes initialized and writable.
+
+1.5 Handle local-slot exhaustion without panicking
+
+Challenge:
+addLocal() reports an error when all 256 local slots are occupied, but callers
+can continue as though the local was added. The for-loop compiler currently
+force-unwraps resolveLocal(), so a loop declared at the local limit can crash
+the compiler instead of producing a normal parse error.
+
+Possible approach:
+- Make addLocal() return the allocated slot or a failure value.
+- Stop emitting bytecode that depends on the local when allocation fails.
+- Avoid force-unwrapping resolveLocal() on error-recovery paths.
+- Add a regression test with 256 live locals followed by a loop declaration.
 
 
-2. Looking up a global variable by name in a hash table each time it is used is pretty slow, even with a good hash table. Can you come up with a more efficient way to store and access global variables without changing the semantics?
+2. Control Flow and Loop Bytecode
+---------------------------------
 
-Possible solutions:
-- Direct array access (counting sequence alike to DotnetLx Local Vars)
-- Inline cache with Invalidation (After force respace <- shrink/respace)
-- Address-Stable Indirection (Global Pool) -> ObjectString is internalized and address should be stable over a run
+2.1 Explore combined jump-and-pop instructions
 
+Challenge:
+Conditionals and loops frequently emit a jump followed by one or more pop
+instructions. Explore dedicated jump-and-pop operations.
 
-Local Variables
+Questions:
+- Do combined instructions improve runtime performance or bytecode density?
+- Which combinations occur frequently enough to justify additional opcodes?
+- Does instruction fusion make compiler stack accounting harder to verify?
 
-1. Our simple local array makes it easy to calculate the stack slot of each local variable. But it means that when the compiler resolves a reference to a variable, we have to do a linear scan through the array.
+2.2 Validate pseudo-range bounds
 
-2. Const modifier is implemented for local but doesn't work for globals. (Might need to introduce a symbol table and reorganize everything to use indexes - relevant for globals cuz use them by names, however there is complexity in implementation of a mutable recurssion).
+Challenge:
+Modern for loops use pseudo-range syntax, but bounds are ordinary runtime
+expressions. The lower bound is evaluated once, while the upper bound is
+re-evaluated before every iteration. Bounds should be validated without turning
+ranges into first-class runtime values.
 
+Possible approach:
+- Add a non-consuming op_check_range_bound instruction.
+- Emit it after evaluating the lower bound and after every evaluation of the
+  dynamic upper bound.
+- Require numeric, finite, integral bounds.
+- Decide whether bounds remain restricted to non-negative u32 values or expand
+  to the largest exactly representable integer supported by f64.
+- Report a range-specific runtime error instead of relying on the generic
+  comparison or addition errors.
 
-Jumps:
-Explore Jump and Pop combinations altogether:
-- performance-wise
-- frequence-usage perspective
+2.3 Add loop-control compilation context
+
+Challenge:
+Break and continue need targets and stack cleanup that depend on the innermost
+active loop. Nested scopes and nested loops must not leak or pop the wrong local
+slots.
+
+Possible approach:
+- Track an enclosing loop context, its scope depth, its continue target, and a
+  list of forward break and continue jumps.
+- Before emitting either control-flow jump, emit cleanup for locals deeper than
+  the loop scope without removing those locals from the compiler's metadata.
+- When closures are supported, close captured locals instead of merely popping
+  them.
+
+2.4 Define continue behavior for desugared for loops
+
+Challenge:
+Continue must execute the for loop's automatic increment before checking the
+upper bound again. Jumping directly to the condition would skip the increment
+and could produce an infinite loop.
+
+Possible approach:
+- Emit continue as a forward jump while compiling the body.
+- Patch pending continue jumps to the synthetic increment section once its
+  offset is known.
+- For while loops, continue can jump directly to the condition offset.
+- Cover continue from nested blocks and nested loops.
+
+2.5 Define break behavior and exit cleanup
+
+Challenge:
+The natural loop exit retains the false condition on the stack and then pops it.
+A break executed from the body has no condition value on the stack. Sending both
+paths to the same cleanup instruction would pop the loop indexer by mistake and
+could make the following scope cleanup underflow the stack.
+
+Possible approach:
+- Patch the condition's false jump to an op_pop that removes the condition.
+- Place the break target immediately after that condition pop and before
+  endScope() emits cleanup for the loop indexer.
+- Collect forward break jumps while compiling the body and patch them to this
+  separate break target.
+- Reject break outside a loop and ensure an inner break never targets an outer
+  loop.

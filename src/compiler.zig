@@ -308,14 +308,7 @@ pub const Compiler = struct {
 
         try self.statement(alloc);
 
-        // --- one increment op can replace all of them
-        try current_chunk.writeConstantAs(alloc, .op_constant, .with_inc_1, self.parser.current.line);
-        try self.emitOpByteArg(alloc, .op_get_local, indexer);
-        try self.emitOp(alloc, .op_add);
-        try self.emitOpByteArg(alloc, .op_set_local, indexer);
-        try self.emitOp(alloc, .op_pop);
-        // --- end
-
+        try self.emitOp2ByteArgs(alloc, .op_inc_local, indexer, 1);
         try self.emitLoop(alloc, loop_start_pos);
 
         self.patchJump(exit_jump);

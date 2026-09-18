@@ -254,6 +254,18 @@ pub const VirtualMachine = struct {
                     const local_index = self.advance();
                     self.stack.items[local_index] = self.peek(0);
                 },
+                .op_inc_local => {
+                    const local_index = self.advance();
+                    const inc = self.advance();
+
+                    const local_val = self.stack.items[local_index];
+
+                    if (local_val != .val_number) {
+                        return self.reportRuntimeError("Local increment expect only number values.\n", .{});
+                    }
+
+                    self.stack.items[local_index].val_number += inc;
+                },
                 .op_wide => {
                     // Incorporate modifier into the operation loop
                     modifier_wide = true;

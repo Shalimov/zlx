@@ -17,6 +17,15 @@ fn printByteArgInstruction(name: []const u8, chunk: *const Chunk, offset: usize)
     return offset + 2;
 }
 
+fn printIncrementLocalInstruction(name: []const u8, chunk: *const Chunk, offset: usize) usize {
+    const local_index = chunk.code.items[offset + 1];
+    const inc_value = chunk.code.items[offset + 2];
+
+    std.debug.print("{0s: <18} {1d: >4} [+{2d}]\n", .{ name, local_index, inc_value });
+
+    return offset + 3;
+}
+
 fn printJumpInstruction(name: []const u8, chunk: *const Chunk, offset: usize, sign: comptime_int) usize {
     if (!(sign == 1 or sign == -1)) {
         @compileError("Sign argument should be 1 or -1.");
@@ -114,6 +123,10 @@ pub fn disassembleInstruction(chunk: *const Chunk, offset: usize) usize {
         .op_popn,
         => |op| {
             result_offset = printByteArgInstruction(@tagName(op), chunk, actual_offset);
+        },
+
+        .op_inc_local => {
+            result_offset = printIncrementLocalInstruction(@tagName(OpCode.op_inc_local), chunk, actual_offset);
         },
 
         inline .op_jump_if_true,

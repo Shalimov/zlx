@@ -18,6 +18,9 @@ pub const OpCode = enum {
     // debugging
     op_print,
 
+    // superinstruction
+    op_inc_local, // Increment a local variable with (1..=255 | u8) step
+
     // Special cases
     op_pop,
     op_popn,

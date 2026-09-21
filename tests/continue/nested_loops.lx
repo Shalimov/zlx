@@ -1,0 +1,16 @@
+// expect: 0
+// expect: 2
+for (var i in 0..4) {
+  for (var j in 0..2) {
+    // inner loop
+  }
+
+  if (i == 1) {
+    continue;
+  }
+  if (i == 3) {
+    continue;
+  }
+
+  print i;
+}

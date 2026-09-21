@@ -1,0 +1,4 @@
+// [line 3] Error at 'continue': Expect 'continue' statement only inside loops.
+{
+  continue;
+}

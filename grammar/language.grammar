@@ -24,6 +24,7 @@ statement      -> exprStmt
                 | ifStmt
                 | forStmt
                 | whileStmt
+                | continueStmt
                 | breakStmt
                 | returnStmt
                 | blockStmt ;
@@ -36,6 +37,7 @@ loopStmt       -> "loop" statement ;
 
 blockStmt      -> "{" declaration* "}" ;
 
+continueStmt   -> "continue" ";" ;
 breakStmt      -> "break" ";" ;
 returnStmt     -> "return" expression? ";" ;
 
@@ -48,8 +50,6 @@ assignment     -> ( call "." )? IDENTIFIER "=" assignment | logicOr ;
 
 logicOr       -> logicAnd "or" logicOr ;
 logicAnd      -> ternary "and" ternary ;
-
-ternary        -> equality ( "?" ternary ":" ternary )? ;
 
 equality       -> comparison ( ( "!=" | "==" ) comparison )* ;
 comparison     -> term ( ( ">" | ">=" | "<" | "<=" ) term )* ;

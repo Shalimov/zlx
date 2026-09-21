@@ -1,0 +1,22 @@
+// expect: 1
+// expect: 1
+// expect: 1
+// expect: 3
+// expect: 3
+// expect: 1
+// expect: 3
+// expect: 3
+for (var i in 1..4) {
+  if (i == 2) {
+    continue;
+  }
+
+  for (var j in 1..4) {
+    if (j == 2) {
+      continue;
+    }
+
+    print i;
+    print j;
+  }
+}

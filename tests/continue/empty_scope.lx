@@ -1,0 +1,13 @@
+// expect: 1
+// expect: 3
+for (var i in 1..4) {
+  {
+    {
+      if (i == 2) {
+        continue;
+      }
+    }
+  }
+
+  print i;
+}

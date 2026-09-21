@@ -22,6 +22,71 @@ Use an optimized build when measuring performance:
 zig build -Doptimize=ReleaseFast
 ```
 
+## Language Features
+
+Status of Lx-lang features:
+
+### Data Types & Literals
+- [x] **Numbers**: Double-precision floating point (`f64`).
+- [x] **Booleans**: `true` and `false`.
+- [x] **Nil**: `nil`.
+- [x] **Strings**: ASCII/UTF-8 string literals with string interning.
+
+### Expressions & Operators
+- [x] **Arithmetic**: Binary `+`, `-`, `*`, `/` (numeric operands only) and unary `-`.
+- [x] **String Concatenation**: Dedicated `++` operator (deviation from standard Lox overloaded `+`).
+- [x] **Comparison**: `<`, `<=`, `>`, `>=`.
+- [x] **Equality**: `==`, `!=`.
+- [x] **Logical Operators**: Unary `!`, short-circuiting `and` and `or`.
+- [x] **Grouping**: Parenthesized expressions `(...)`.
+- [x] **Variable Assignment**: `identifier = expression` (locals and globals).
+- [ ] **Ternary Operator**: `expression if condition else expression`
+- [ ] **Comma Operator**: `expr1, expr2`
+
+### Statements & Declarations
+- [x] **Expression Statements**: `expression;`.
+- [x] **Print Statements**: `print expression;`.
+- [x] **Block Statements**: `{ ... }` establishing local lexical scopes.
+
+### Variables & Scope
+- [x] **Variable Declarations (`var`)**: Mutable variables with optional initializer (defaults to `nil`).
+- [x] **Global Variables**: Late-bound global lookup and assignment via hash table.
+- [x] **Local Variables**: Stack-allocated local resolution within lexical blocks.
+- [x] **Lexical Shadowing**: Nested local scopes shadowing outer bindings.
+- [x] **Self-Referencing Initializer Check**: Disallows `var a = a;` in local scope.
+- [ ] **Constants (`const`)** *(Language extension)*:
+  - [x] Local `const`: Enforces mandatory initial value and immutability checks at compile time.
+  - [ ] Global `const`: Parsed and stored, but immutability is not yet enforced for global bindings.
+
+### Control Flow
+- [x] **Conditionals**: `if (condition) thenBranch` with optional `else branch`.
+- [x] **Truthiness**: `nil` and `false` are falsy; all other values are truthy.
+- [x] **While Loops**: `while (condition) statement`.
+- [x] **Range-Based For Loops** *(Language extension)*: `for (var i in start..end)` and `for (var i in start..=end)` desugared with `op_inc_local`.
+- [ ] **Loop Control Statements**:
+  - [x] `continue`: Supported in basic loops.
+  - [ ] `break`: Lexical loop break context not yet implemented.
+  - [ ] `loop`: Infinite loop syntax not yet implemented.
+
+### Functions & Closures
+- [ ] **Function Declarations**: `fun name(params) { ... }`.
+- [ ] **Function Calls**: `callee(args)`.
+- [ ] **Return Statements**: `return expression;`.
+- [ ] **Closures**: Upvalue capture from enclosing lexical environments.
+- [ ] **Anonymous Functions / Lambdas**: `fun(params) expression`.
+- [ ] **Native Functions**: Built-in runtime functions (e.g., `clock()`).
+- [ ] **Call Frames & Stack**: Multi-frame call stack in the virtual machine.
+
+### Classes & Object-Oriented Programming
+- [ ] **Class Declarations**: `class Name { ... }`.
+- [ ] **Instances & Fields**: Dynamic property access and assignment (`object.field`).
+- [ ] **Methods**: Member function dispatch on instances.
+- [ ] **Initializers**: Constructor methods (`init()`).
+- [ ] **`this` Keyword**: Self-reference within instance methods.
+- [ ] **Inheritance**: Superclass derivation (`class Sub < Super`).
+- [ ] **`super` Keyword**: Superclass method dispatch.
+- [ ] **Extended OOP Features**: Static methods, properties, and protocols (defined in grammar, uncompiled).
+
 ## Project structure
 
 | Path | Purpose |

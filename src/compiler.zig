@@ -89,6 +89,10 @@ pub const CompilerError = error{
     ParseError,
 };
 
+const MAX_U8_PLUS1 = std.math.maxInt(u8) + 1;
+const MAX_U16 = std.math.maxInt(u16);
+const MAX_USIZE = std.math.maxInt(usize);
+
 const Parser = struct {
     const ErrorToken = Token{
         .line = 0,
@@ -101,22 +105,44 @@ const Parser = struct {
     had_error: bool,
     panic_mode: bool,
 
-    pub const init: @This() = .{ .current = ErrorToken, .previous = ErrorToken, .panic_mode = false, .had_error = false };
+    pub const init: @This() = .{
+        .current = ErrorToken,
+        .previous = ErrorToken,
+        .panic_mode = false,
+        .had_error = false,
+    };
+};
+
+const VarModifier = packed struct {
+    initialized: bool,
+    mutable: bool,
 };
 
 const LocalVar = struct {
-    const Modifier = packed struct {
-        initialized: bool,
-        mutable: bool,
-    };
-
     name: []const u8,
     depth: i32,
-    modifier: Modifier,
+    modifier: VarModifier,
 };
 
-const MAX_U8_PLUS1 = std.math.maxInt(u8) + 1;
-const MAX_U16 = std.math.maxInt(u16);
+const EnclosingEnvironment = struct {
+    const EnvMeta = packed struct {
+        in_loop: bool,
+    };
+
+    closest_loop_start: usize,
+    closest_loop_entry_depth: i32,
+    meta: EnvMeta,
+
+    fn init() @This() {
+        return .{
+            .closest_loop_start = MAX_USIZE,
+            .closest_loop_entry_depth = -1,
+            .meta = .{
+                .in_loop = false,
+            },
+        };
+    }
+};
 
 pub const Compiler = struct {
     const Self = @This();
@@ -128,6 +154,8 @@ pub const Compiler = struct {
     scanner: Scanner,
     parser: Parser,
     compiling_chunk: *Chunk,
+
+    enclosing_env: EnclosingEnvironment,
 
     pub fn compile(self: *Compiler, alloc: std.mem.Allocator, source: []const u8, chunk: *Chunk) !void {
         self.init();
@@ -152,6 +180,8 @@ pub const Compiler = struct {
     inline fn init(self: *Compiler) void {
         self.locals_count = 0;
         self.locals_depth = 0;
+
+        self.enclosing_env = .init();
 
         self.parser.had_error = false;
         self.parser.panic_mode = false;
@@ -227,6 +257,8 @@ pub const Compiler = struct {
             try self.whileStatement(alloc);
         } else if (self.match(.token_for)) {
             try self.forStatement(alloc);
+        } else if (self.match(.token_continue)) {
+            try self.continueStatement(alloc);
         } else {
             try self.expressionStatement(alloc);
         }
@@ -257,6 +289,9 @@ pub const Compiler = struct {
     fn whileStatement(self: *Compiler, alloc: std.mem.Allocator) anyerror!void {
         const loop_start_pos = self.getCurrentChunk().code.items.len;
 
+        const enclosing_env = self.setupLoopMetadata(loop_start_pos);
+        defer self.resetLoopMetadata(enclosing_env);
+
         self.consume(.token_left_paren, "Expect '(' after while statement.");
         try self.expression(alloc);
         self.consume(.token_right_paren, "Expect ')' after condition.");
@@ -271,15 +306,12 @@ pub const Compiler = struct {
         try self.emitOp(alloc, .op_pop);
     }
 
-    // A lot of optimization is possible here:
-    // 1. operations with pop - included
-    // 2. increment operations (with up to 255 step)
     fn forStatement(self: *Compiler, alloc: std.mem.Allocator) anyerror!void {
         self.beginScope();
 
-        self.consume(.token_left_paren, "Expect '(' after while statement.");
-        self.consume(.token_var, "Expect only mutable variable for the loop indexer.");
-        self.consume(.token_identifier, "Expect indexer name.");
+        self.consume(.token_left_paren, "Expect '(' after for statement.");
+        self.consume(.token_var, "Expect only a mutable variable for the loop indexer.");
+        self.consume(.token_identifier, "Expect an indexer name.");
         const indexer_name_token = self.parser.previous;
 
         self.consume(.token_in, "Expect 'in' operator for the indexer expression.");
@@ -288,9 +320,18 @@ pub const Compiler = struct {
         try self.expression(alloc);
         self.markLastLocalInitialized();
 
+        const skip_first_inc_jump = try self.emitJump(alloc, .op_jump_frwd);
+
         const current_chunk = self.getCurrentChunk();
         const indexer = self.resolveLocal(indexer_name_token.str).?;
         const loop_start_pos = current_chunk.code.items.len;
+
+        const enclosing_env = self.setupLoopMetadata(loop_start_pos);
+        defer self.resetLoopMetadata(enclosing_env);
+
+        try self.emitOp2ByteArgs(alloc, .op_inc_local, indexer, 1);
+
+        self.patchJump(skip_first_inc_jump);
 
         try self.emitOpByteArg(alloc, .op_get_local, indexer);
 
@@ -308,7 +349,6 @@ pub const Compiler = struct {
 
         try self.statement(alloc);
 
-        try self.emitOp2ByteArgs(alloc, .op_inc_local, indexer, 1);
         try self.emitLoop(alloc, loop_start_pos);
 
         self.patchJump(exit_jump);
@@ -340,6 +380,34 @@ pub const Compiler = struct {
         self.consume(.token_semicolon, "Expect ';' after expression.");
 
         try self.emitOp(alloc, .op_pop);
+    }
+
+    fn continueStatement(self: *Compiler, alloc: std.mem.Allocator) !void {
+        if (!self.enclosing_env.meta.in_loop) {
+            @branchHint(.cold);
+
+            self.errorAtPrev("Expect 'continue' statement only inside loops.");
+            return;
+        }
+
+        self.consume(.token_semicolon, "Expect ';' after continue.");
+
+        const n_scopes = self.getVarCountBetweenScopes();
+
+        if (n_scopes > 0) {
+            if (n_scopes >= MAX_U8_PLUS1) {
+                @branchHint(.cold);
+
+                // TODO: This check is relevant for max num of vars MAX_U8
+                // After extending the number to MAX_16 this should be changed accordingly
+                self.errorAtPrev("Too many variables are used.");
+                return;
+            }
+
+            try self.emitOpByteArg(alloc, .op_popn, @intCast(n_scopes));
+        }
+
+        try self.emitLoop(alloc, self.enclosing_env.closest_loop_start);
     }
 
     // Expressions, Pratt.
@@ -528,7 +596,7 @@ pub const Compiler = struct {
 
     // Scope and local related code related functions
 
-    fn addLocal(self: *Compiler, local_name: []const u8, modifier: LocalVar.Modifier) void {
+    fn addLocal(self: *Compiler, local_name: []const u8, modifier: VarModifier) void {
         if (self.locals_count == MAX_U8_PLUS1) {
             self.errorAtPrev("Too many local variables defined.");
 
@@ -565,6 +633,26 @@ pub const Compiler = struct {
         if (pop_count > 0) {
             try self.emitOpByteArg(alloc, .op_popn, pop_count);
         }
+    }
+
+    inline fn setupLoopMetadata(self: *Compiler, start_offset: usize) EnclosingEnvironment {
+        const enclosing_environment: EnclosingEnvironment = .{
+            .closest_loop_entry_depth = self.enclosing_env.closest_loop_entry_depth,
+            .closest_loop_start = self.enclosing_env.closest_loop_start,
+            .meta = self.enclosing_env.meta,
+        };
+
+        self.enclosing_env.closest_loop_entry_depth = self.locals_depth;
+        self.enclosing_env.closest_loop_start = start_offset;
+        self.enclosing_env.meta.in_loop = true;
+
+        return enclosing_environment;
+    }
+
+    inline fn resetLoopMetadata(self: *Compiler, enclosing_environment: EnclosingEnvironment) void {
+        self.enclosing_env.closest_loop_entry_depth = enclosing_environment.closest_loop_entry_depth;
+        self.enclosing_env.closest_loop_start = enclosing_environment.closest_loop_start;
+        self.enclosing_env.meta = enclosing_environment.meta;
     }
 
     // End scope related functions
@@ -633,6 +721,19 @@ pub const Compiler = struct {
         }
 
         return null;
+    }
+
+    inline fn getVarCountBetweenScopes(self: *Compiler) i32 {
+        var i = self.locals_count - 1;
+        const start_scope_depth = self.enclosing_env.closest_loop_entry_depth;
+
+        while (i >= 0) : (i -= 1) {
+            if (self.locals[@intCast(i)].depth <= start_scope_depth) {
+                break;
+            }
+        }
+
+        return self.locals_count - i - 1;
     }
 
     inline fn check(self: *Compiler, token_type: TokenType) bool {

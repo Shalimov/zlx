@@ -1,0 +1,16 @@
+// expect: 1
+// expect: 2
+// expect: 4
+var i = 0;
+while (i < 4) {
+  i = i + 1;
+  var temp = i * 10;
+  {
+    var inner = temp + 5;
+    if (i == 3) {
+      continue;
+    }
+  }
+
+  print i;
+}

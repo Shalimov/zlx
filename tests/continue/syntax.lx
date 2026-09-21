@@ -1,0 +1,17 @@
+// expect: 10
+// expect: 20
+// expect: 40
+for (var i in 1..5) {
+  var tipsy = i * 5;
+  var dipsy = tipsy * 2;
+
+  {
+    var check = true;
+
+    if (i == 3) {
+      continue;
+    }
+  }
+
+  print dipsy;
+}

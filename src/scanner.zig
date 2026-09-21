@@ -41,6 +41,7 @@ pub const TokenType = enum {
     token_else,
     token_for,
     token_while,
+    token_continue,
     token_fun,
     token_return,
     token_class,
@@ -217,38 +218,48 @@ pub const Scanner = struct {
         return char >= '0' and char <= '9';
     }
 
+    // check std.StaticStringMap(TokenType).initComptime
+    // the performance depends on keyward distribution but it groups tokens by length and check only if length is the same
+    // more readable but might be less performant (if it is at all a bottleneck)
     fn inferIdentifierToken(self: *Scanner) TokenType {
         return switch (self.start[0]) {
-            'a' => self.checkKeyword(1, "nd", TokenType.token_and),
+            'a' => self.checkKeyword(1, "nd", .token_and),
             'c' => if (self.current - self.start > 1) switch (self.start[1]) {
-                'o' => self.checkKeyword(2, "nst", TokenType.token_const),
-                'l' => self.checkKeyword(2, "ass", TokenType.token_class), // Oops
+                'o' => if (self.current - self.start > 2) switch (self.start[2]) {
+                    'n' => if (self.current - self.start > 3) switch (self.start[3]) {
+                        's' => self.checkKeyword(4, "t", .token_const),
+                        't' => self.checkKeyword(4, "inue", .token_continue),
+                        else => TokenType.token_identifier,
+                    } else TokenType.token_identifier,
+                    else => TokenType.token_identifier,
+                } else TokenType.token_identifier,
+                'l' => self.checkKeyword(2, "ass", .token_class), // Oops
                 else => TokenType.token_identifier,
             } else TokenType.token_identifier,
-            'e' => self.checkKeyword(1, "lse", TokenType.token_else),
+            'e' => self.checkKeyword(1, "lse", .token_else),
             'f' => if (self.current - self.start > 1) switch (self.start[1]) {
-                'a' => self.checkKeyword(2, "lse", TokenType.token_false),
-                'o' => self.checkKeyword(2, "r", TokenType.token_for),
-                'u' => self.checkKeyword(2, "n", TokenType.token_fun),
+                'a' => self.checkKeyword(2, "lse", .token_false),
+                'o' => self.checkKeyword(2, "r", .token_for),
+                'u' => self.checkKeyword(2, "n", .token_fun),
                 else => TokenType.token_identifier,
             } else TokenType.token_identifier,
             'i' => if (self.current - self.start > 1) switch (self.start[1]) {
-                'f' => self.checkKeyword(2, "", TokenType.token_if),
-                'n' => self.checkKeyword(2, "", TokenType.token_in),
+                'f' => self.checkKeyword(2, "", .token_if),
+                'n' => self.checkKeyword(2, "", .token_in),
                 else => TokenType.token_identifier,
             } else TokenType.token_identifier,
-            'n' => self.checkKeyword(1, "il", TokenType.token_nil),
-            'o' => self.checkKeyword(1, "r", TokenType.token_or),
-            'p' => self.checkKeyword(1, "rint", TokenType.token_print),
-            'r' => self.checkKeyword(1, "eturn", TokenType.token_return),
-            's' => self.checkKeyword(1, "uper", TokenType.token_super),
+            'n' => self.checkKeyword(1, "il", .token_nil),
+            'o' => self.checkKeyword(1, "r", .token_or),
+            'p' => self.checkKeyword(1, "rint", .token_print),
+            'r' => self.checkKeyword(1, "eturn", .token_return),
+            's' => self.checkKeyword(1, "uper", .token_super),
             't' => if (self.current - self.start > 1) switch (self.start[1]) {
-                'h' => self.checkKeyword(2, "is", TokenType.token_this),
-                'r' => self.checkKeyword(2, "ue", TokenType.token_true),
+                'h' => self.checkKeyword(2, "is", .token_this),
+                'r' => self.checkKeyword(2, "ue", .token_true),
                 else => TokenType.token_identifier,
             } else TokenType.token_identifier,
-            'v' => self.checkKeyword(1, "ar", TokenType.token_var),
-            'w' => self.checkKeyword(1, "hile", TokenType.token_while),
+            'v' => self.checkKeyword(1, "ar", .token_var),
+            'w' => self.checkKeyword(1, "hile", .token_while),
             else => TokenType.token_identifier,
         };
     }
@@ -362,6 +373,7 @@ test "expect parsing keywords" {
         \\ true this
         \\ super var const while
         \\ false for fun
+        \\ continue
     ;
     var scanner: Scanner = undefined;
     scanner.init(source);
@@ -384,6 +396,7 @@ test "expect parsing keywords" {
     try expectToken(&scanner, TokenType.token_false, "false");
     try expectToken(&scanner, TokenType.token_for, "for");
     try expectToken(&scanner, TokenType.token_fun, "fun");
+    try expectToken(&scanner, TokenType.token_continue, "continue");
 
     try expectEof(&scanner);
 }
@@ -398,6 +411,7 @@ test "expect parsing identifiers" {
         \\ vario constio whileboy
         \\ truely falseie forly funly
         \\ funfun thisisnotakeyword
+        \\ continuecontinue
     ;
 
     var scanner: Scanner = undefined;
@@ -425,6 +439,7 @@ test "expect parsing identifiers" {
     try expectToken(&scanner, TokenType.token_identifier, "funly");
     try expectToken(&scanner, TokenType.token_identifier, "funfun");
     try expectToken(&scanner, TokenType.token_identifier, "thisisnotakeyword");
+    try expectToken(&scanner, TokenType.token_identifier, "continuecontinue");
     try expectEof(&scanner);
 }
 

@@ -41,6 +41,7 @@ pub const TokenType = enum {
     token_else,
     token_for,
     token_while,
+    token_loop,
     token_continue,
     token_fun,
     token_return,
@@ -248,6 +249,7 @@ pub const Scanner = struct {
                 'n' => self.checkKeyword(2, "", .token_in),
                 else => TokenType.token_identifier,
             } else TokenType.token_identifier,
+            'l' => self.checkKeyword(1, "oop", .token_loop),
             'n' => self.checkKeyword(1, "il", .token_nil),
             'o' => self.checkKeyword(1, "r", .token_or),
             'p' => self.checkKeyword(1, "rint", .token_print),
@@ -372,7 +374,7 @@ test "expect parsing keywords" {
         \\ if in nil print return
         \\ true this
         \\ super var const while
-        \\ false for fun
+        \\ false for fun loop
         \\ continue
     ;
     var scanner: Scanner = undefined;
@@ -396,6 +398,7 @@ test "expect parsing keywords" {
     try expectToken(&scanner, TokenType.token_false, "false");
     try expectToken(&scanner, TokenType.token_for, "for");
     try expectToken(&scanner, TokenType.token_fun, "fun");
+    try expectToken(&scanner, TokenType.token_loop, "loop");
     try expectToken(&scanner, TokenType.token_continue, "continue");
 
     try expectEof(&scanner);
@@ -410,7 +413,7 @@ test "expect parsing identifiers" {
         \\ printy returny superbowl
         \\ vario constio whileboy
         \\ truely falseie forly funly
-        \\ funfun thisisnotakeyword
+        \\ funfun thisisnotakeyword looploop
         \\ continuecontinue
     ;
 
@@ -439,6 +442,7 @@ test "expect parsing identifiers" {
     try expectToken(&scanner, TokenType.token_identifier, "funly");
     try expectToken(&scanner, TokenType.token_identifier, "funfun");
     try expectToken(&scanner, TokenType.token_identifier, "thisisnotakeyword");
+    try expectToken(&scanner, TokenType.token_identifier, "looploop");
     try expectToken(&scanner, TokenType.token_identifier, "continuecontinue");
     try expectEof(&scanner);
 }

@@ -257,6 +257,8 @@ pub const Compiler = struct {
             try self.whileStatement(alloc);
         } else if (self.match(.token_for)) {
             try self.forStatement(alloc);
+        } else if (self.match(.token_loop)) {
+            try self.loopStatement(alloc);
         } else if (self.match(.token_continue)) {
             try self.continueStatement(alloc);
         } else {
@@ -304,6 +306,16 @@ pub const Compiler = struct {
 
         self.patchJump(exit_jump);
         try self.emitOp(alloc, .op_pop);
+    }
+
+    fn loopStatement(self: *Compiler, alloc: std.mem.Allocator) anyerror!void {
+        const loop_start_pos = self.getCurrentChunk().code.items.len;
+
+        const enclosing_env = self.setupLoopMetadata(loop_start_pos);
+        defer self.resetLoopMetadata(enclosing_env);
+
+        try self.statement(alloc);
+        try self.emitLoop(alloc, loop_start_pos);
     }
 
     fn forStatement(self: *Compiler, alloc: std.mem.Allocator) anyerror!void {
@@ -666,7 +678,7 @@ pub const Compiler = struct {
             if (self.parser.previous.token_type == .token_semicolon) return;
 
             switch (self.parser.current.token_type) {
-                .token_class, .token_fun, .token_var, .token_const, .token_for, .token_if, .token_while, .token_print, .token_return => return,
+                .token_class, .token_fun, .token_var, .token_const, .token_if, .token_loop, .token_for, .token_while, .token_print, .token_return => return,
                 else => self.advance(),
             }
         }

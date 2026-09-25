@@ -1,0 +1,16 @@
+// Both break statements are reached across these calls.
+// expect: 0
+// expect: 0
+// expect: 1
+fun printBeforeBreak(stopAt) {
+  var i = 0;
+  while (i < 5) {
+    if (i == stopAt) break;
+    if (i == 2) break;
+    print i;
+    i = i + 1;
+  }
+}
+
+printBeforeBreak(1);
+printBeforeBreak(3);

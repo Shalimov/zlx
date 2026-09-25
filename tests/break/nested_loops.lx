@@ -1,0 +1,15 @@
+// A break exits only the innermost loop.
+// expect: 0
+// expect: 1
+// expect: 2
+// expect: 10
+// expect: 11
+// expect: 12
+for (var i in 0..2) {
+  var j = 0;
+  loop {
+    if (j == 3) break;
+    print i * 10 + j;
+    j = j + 1;
+  }
+}

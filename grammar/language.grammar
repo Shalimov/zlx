@@ -24,6 +24,7 @@ statement      -> exprStmt
                 | ifStmt
                 | forStmt
                 | whileStmt
+                | loopStmt
                 | continueStmt
                 | breakStmt
                 | returnStmt

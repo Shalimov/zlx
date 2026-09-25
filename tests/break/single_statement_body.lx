@@ -1,0 +1,4 @@
+// expect: 1
+// expect: 2
+var i = 0;
+while (i < 5) if (i == 2) break; else print i = i + 1;

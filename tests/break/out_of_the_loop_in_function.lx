@@ -1,0 +1,4 @@
+fun f() {
+  // [line 3] Error at 'break': Expect 'break' statement only inside loops.
+  break;
+}

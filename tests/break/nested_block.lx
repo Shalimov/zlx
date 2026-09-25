@@ -1,0 +1,10 @@
+// expect: before
+// expect: after
+loop {
+  {
+    print "before";
+    break;
+    print "unreachable";
+  }
+}
+print "after";

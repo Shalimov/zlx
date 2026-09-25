@@ -1,0 +1,2 @@
+// [line 2] Error at 'break': Expect 'break' statement only inside loops.
+break;

@@ -89,6 +89,7 @@ pub const CompilerError = error{
     ParseError,
 };
 
+const MAX_U8 = std.math.maxInt(u8);
 const MAX_U8_PLUS1 = std.math.maxInt(u8) + 1;
 const MAX_U16 = std.math.maxInt(u16);
 const MAX_USIZE = std.math.maxInt(usize);
@@ -405,29 +406,17 @@ pub const Compiler = struct {
     }
 
     fn breakStatement(self: *Compiler, alloc: std.mem.Allocator) !void {
+        const break_token = self.parser.previous;
         self.consume(.token_semicolon, "Expect ';' after break.");
 
         if (!self.enclosing_env.meta.in_loop) {
             @branchHint(.cold);
 
-            self.errorAtPrev("Expect 'break' statement only inside loops.");
+            self.errorAt(break_token, "Expect 'break' statement only inside loops.");
             return;
         }
 
-        const n_scopes = self.getVarCountBetweenScopes();
-
-        if (n_scopes > 0) {
-            if (n_scopes >= MAX_U8_PLUS1) {
-                @branchHint(.cold);
-
-                // TODO: This check is relevant for max num of vars MAX_U8
-                // After extending the number to MAX_16 this should be changed accordingly
-                self.errorAtPrev("Too many variables are used.");
-                return;
-            }
-
-            try self.emitOpByteArg(alloc, .op_popn, @intCast(n_scopes));
-        }
+        try self.emitPopN(alloc, @intCast(self.getVarCountBetweenScopes()));
 
         const current_break_jump = try self.emitJump(alloc, .op_jump_frwd);
 
@@ -435,29 +424,17 @@ pub const Compiler = struct {
     }
 
     fn continueStatement(self: *Compiler, alloc: std.mem.Allocator) !void {
+        const continue_token = self.parser.previous;
         self.consume(.token_semicolon, "Expect ';' after continue.");
 
         if (!self.enclosing_env.meta.in_loop) {
             @branchHint(.cold);
 
-            self.errorAtPrev("Expect 'continue' statement only inside loops.");
+            self.errorAt(continue_token, "Expect 'continue' statement only inside loops.");
             return;
         }
 
-        const n_scopes = self.getVarCountBetweenScopes();
-
-        if (n_scopes > 0) {
-            if (n_scopes >= MAX_U8_PLUS1) {
-                @branchHint(.cold);
-
-                // TODO: This check is relevant for max num of vars MAX_U8
-                // After extending the number to MAX_16 this should be changed accordingly
-                self.errorAtPrev("Too many variables are used.");
-                return;
-            }
-
-            try self.emitOpByteArg(alloc, .op_popn, @intCast(n_scopes));
-        }
+        try self.emitPopN(alloc, @intCast(self.getVarCountBetweenScopes()));
 
         try self.emitLoop(alloc, self.enclosing_env.closest_loop_start_offset);
     }
@@ -689,16 +666,14 @@ pub const Compiler = struct {
         self.locals_depth -= 1;
 
         var i = self.locals_count - 1;
-        var pop_count: u8 = 0;
+        var pop_count: usize = 0;
 
         while (i >= 0 and self.locals[@intCast(i)].depth >= current_scope) : (i -= 1) {
             pop_count += 1;
             self.locals_count -= 1;
         }
 
-        if (pop_count > 0) {
-            try self.emitOpByteArg(alloc, .op_popn, pop_count);
-        }
+        try self.emitPopN(alloc, pop_count);
     }
 
     inline fn setupLoopMetadata(self: *Compiler, start_offset: usize) EnclosingEnvironment {
@@ -861,6 +836,27 @@ pub const Compiler = struct {
 
         if (builtin.mode == .Debug) {
             debug.disassembleChunk(self.getCurrentChunk(), "code");
+        }
+    }
+
+    fn emitPopN(self: *Compiler, alloc: std.mem.Allocator, count: usize) !void {
+        var remaining = count;
+
+        if (count == 1) {
+            try self.emitOp(alloc, .op_pop);
+
+            return;
+        }
+
+        while (remaining > MAX_U8) {
+            try self.emitOpByteArg(alloc, .op_popn, MAX_U8);
+            remaining -= MAX_U8;
+        }
+
+        if (remaining == 1) {
+            try self.emitOp(alloc, .op_pop);
+        } else if (remaining > 1) {
+            try self.emitOpByteArg(alloc, .op_popn, @intCast(remaining));
         }
     }
 

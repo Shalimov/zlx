@@ -64,9 +64,9 @@ Status of Lx-lang features:
 - [x] **While Loops**: `while (condition) statement`.
 - [x] **Range-Based For Loops** *(Language extension)*: `for (var i in start..end)` and `for (var i in start..=end)` desugared with `op_inc_local`.
 - [x] **Infinite Loops** *(Language extension)*: `loop statement` repeats a statement or block indefinitely; `continue;` starts the next iteration.
-- [ ] **Loop Control Statements**:
-  - [x] `continue`: Supported in basic loops.
-  - [ ] `break`: Lexical loop break context not yet implemented.
+- [x] **Loop Control Statements**: Conventional innermost-loop behavior.
+  - [x] `continue`: Starts the next iteration of the innermost loop, including the automatic increment in a `for` loop.
+  - [x] `break`: Exits the innermost loop.
 
 ### Functions & Closures
 - [ ] **Function Declarations**: `fun name(params) { ... }`.

@@ -129,13 +129,15 @@ const EnclosingEnvironment = struct {
         in_loop: bool,
     };
 
-    closest_loop_start: usize,
+    closest_break_head_offset: usize,
+    closest_loop_start_offset: usize,
     closest_loop_entry_depth: i32,
     meta: EnvMeta,
 
     fn init() @This() {
         return .{
-            .closest_loop_start = MAX_USIZE,
+            .closest_break_head_offset = MAX_USIZE,
+            .closest_loop_start_offset = MAX_USIZE,
             .closest_loop_entry_depth = -1,
             .meta = .{
                 .in_loop = false,
@@ -259,6 +261,8 @@ pub const Compiler = struct {
             try self.forStatement(alloc);
         } else if (self.match(.token_loop)) {
             try self.loopStatement(alloc);
+        } else if (self.match(.token_break)) {
+            try self.breakStatement(alloc);
         } else if (self.match(.token_continue)) {
             try self.continueStatement(alloc);
         } else {
@@ -292,7 +296,7 @@ pub const Compiler = struct {
         const loop_start_pos = self.getCurrentChunk().code.items.len;
 
         const enclosing_env = self.setupLoopMetadata(loop_start_pos);
-        defer self.resetLoopMetadata(enclosing_env);
+        defer self.restoreLoopMetadata(enclosing_env);
 
         self.consume(.token_left_paren, "Expect '(' after while statement.");
         try self.expression(alloc);
@@ -306,16 +310,20 @@ pub const Compiler = struct {
 
         self.patchJump(exit_jump);
         try self.emitOp(alloc, .op_pop);
+
+        self.rectifyBreaksExit(enclosing_env);
     }
 
     fn loopStatement(self: *Compiler, alloc: std.mem.Allocator) anyerror!void {
         const loop_start_pos = self.getCurrentChunk().code.items.len;
 
         const enclosing_env = self.setupLoopMetadata(loop_start_pos);
-        defer self.resetLoopMetadata(enclosing_env);
+        defer self.restoreLoopMetadata(enclosing_env);
 
         try self.statement(alloc);
         try self.emitLoop(alloc, loop_start_pos);
+
+        self.rectifyBreaksExit(enclosing_env);
     }
 
     fn forStatement(self: *Compiler, alloc: std.mem.Allocator) anyerror!void {
@@ -339,7 +347,7 @@ pub const Compiler = struct {
         const loop_start_pos = current_chunk.code.items.len;
 
         const enclosing_env = self.setupLoopMetadata(loop_start_pos);
-        defer self.resetLoopMetadata(enclosing_env);
+        defer self.restoreLoopMetadata(enclosing_env);
 
         try self.emitOp2ByteArgs(alloc, .op_inc_local, indexer, 1);
 
@@ -366,6 +374,8 @@ pub const Compiler = struct {
         self.patchJump(exit_jump);
 
         try self.emitOp(alloc, .op_pop);
+
+        self.rectifyBreaksExit(enclosing_env);
 
         try self.endScope(alloc);
     }
@@ -394,15 +404,15 @@ pub const Compiler = struct {
         try self.emitOp(alloc, .op_pop);
     }
 
-    fn continueStatement(self: *Compiler, alloc: std.mem.Allocator) !void {
+    fn breakStatement(self: *Compiler, alloc: std.mem.Allocator) !void {
+        self.consume(.token_semicolon, "Expect ';' after break.");
+
         if (!self.enclosing_env.meta.in_loop) {
             @branchHint(.cold);
 
-            self.errorAtPrev("Expect 'continue' statement only inside loops.");
+            self.errorAtPrev("Expect 'break' statement only inside loops.");
             return;
         }
-
-        self.consume(.token_semicolon, "Expect ';' after continue.");
 
         const n_scopes = self.getVarCountBetweenScopes();
 
@@ -419,7 +429,42 @@ pub const Compiler = struct {
             try self.emitOpByteArg(alloc, .op_popn, @intCast(n_scopes));
         }
 
-        try self.emitLoop(alloc, self.enclosing_env.closest_loop_start);
+        const current_break_jump = try self.emitJump(alloc, .op_jump_frwd);
+
+        // Trick is to use current_break_jump to point out to itself if there is no break before
+        // it is a stop point to follow to setup break jumps in the code
+        const prev_break_pos = if (self.enclosing_env.closest_break_head_offset == MAX_USIZE) current_break_jump else self.enclosing_env.closest_break_head_offset;
+        self.patchJumpTo(current_break_jump, prev_break_pos);
+
+        self.enclosing_env.closest_break_head_offset = current_break_jump;
+    }
+
+    fn continueStatement(self: *Compiler, alloc: std.mem.Allocator) !void {
+        self.consume(.token_semicolon, "Expect ';' after continue.");
+
+        if (!self.enclosing_env.meta.in_loop) {
+            @branchHint(.cold);
+
+            self.errorAtPrev("Expect 'continue' statement only inside loops.");
+            return;
+        }
+
+        const n_scopes = self.getVarCountBetweenScopes();
+
+        if (n_scopes > 0) {
+            if (n_scopes >= MAX_U8_PLUS1) {
+                @branchHint(.cold);
+
+                // TODO: This check is relevant for max num of vars MAX_U8
+                // After extending the number to MAX_16 this should be changed accordingly
+                self.errorAtPrev("Too many variables are used.");
+                return;
+            }
+
+            try self.emitOpByteArg(alloc, .op_popn, @intCast(n_scopes));
+        }
+
+        try self.emitLoop(alloc, self.enclosing_env.closest_loop_start_offset);
     }
 
     // Expressions, Pratt.
@@ -594,16 +639,22 @@ pub const Compiler = struct {
         return self.getCurrentChunk().code.items.len - 2;
     }
 
-    fn patchJump(self: *Compiler, jump_op_offset: usize) void {
+    inline fn patchJump(self: *Compiler, jump_op_offset: usize) void {
         const items = self.getCurrentChunk().code.items;
         const current_jump_pos = items.len - jump_op_offset - 2;
 
-        if (jump_op_offset > MAX_U16) {
+        self.patchJumpTo(jump_op_offset, current_jump_pos);
+    }
+
+    fn patchJumpTo(self: *Compiler, jump_to_patch_pos: usize, jump_target_pos: usize) void {
+        const items = self.getCurrentChunk().code.items;
+
+        if (jump_to_patch_pos > MAX_U16) {
             self.errorAtCurr("Too many code lines to jump over.");
         }
 
-        items[jump_op_offset] = @intCast(current_jump_pos & 0xFF);
-        items[jump_op_offset + 1] = @intCast((current_jump_pos >> 8) & 0xFF);
+        items[jump_to_patch_pos] = @intCast(jump_target_pos & 0xFF);
+        items[jump_to_patch_pos + 1] = @intCast((jump_target_pos >> 8) & 0xFF);
     }
 
     // Scope and local related code related functions
@@ -649,22 +700,48 @@ pub const Compiler = struct {
 
     inline fn setupLoopMetadata(self: *Compiler, start_offset: usize) EnclosingEnvironment {
         const enclosing_environment: EnclosingEnvironment = .{
+            .closest_break_head_offset = self.enclosing_env.closest_break_head_offset,
             .closest_loop_entry_depth = self.enclosing_env.closest_loop_entry_depth,
-            .closest_loop_start = self.enclosing_env.closest_loop_start,
+            .closest_loop_start_offset = self.enclosing_env.closest_loop_start_offset,
             .meta = self.enclosing_env.meta,
         };
 
         self.enclosing_env.closest_loop_entry_depth = self.locals_depth;
-        self.enclosing_env.closest_loop_start = start_offset;
+        self.enclosing_env.closest_loop_start_offset = start_offset;
         self.enclosing_env.meta.in_loop = true;
 
         return enclosing_environment;
     }
 
-    inline fn resetLoopMetadata(self: *Compiler, enclosing_environment: EnclosingEnvironment) void {
+    inline fn restoreLoopMetadata(self: *Compiler, enclosing_environment: EnclosingEnvironment) void {
         self.enclosing_env.closest_loop_entry_depth = enclosing_environment.closest_loop_entry_depth;
-        self.enclosing_env.closest_loop_start = enclosing_environment.closest_loop_start;
+        self.enclosing_env.closest_break_head_offset = enclosing_environment.closest_break_head_offset;
+        self.enclosing_env.closest_loop_start_offset = enclosing_environment.closest_loop_start_offset;
         self.enclosing_env.meta = enclosing_environment.meta;
+    }
+
+    fn rectifyBreaksExit(self: *Compiler, outer_enclosing_environment: EnclosingEnvironment) void {
+        const stop_offset = outer_enclosing_environment.closest_break_head_offset;
+
+        if (stop_offset == self.enclosing_env.closest_break_head_offset) {
+            return;
+        }
+
+        const current_chunk = self.getCurrentChunk();
+        const code_instructions = current_chunk.code.items;
+
+        var curr_break_pos = self.enclosing_env.closest_break_head_offset;
+        var prev_break_pos: usize = undefined;
+
+        while (curr_break_pos != stop_offset) {
+            prev_break_pos = (@as(u16, code_instructions[curr_break_pos + 1]) << 8) + @as(u16, code_instructions[curr_break_pos]);
+
+            self.patchJump(curr_break_pos);
+
+            if (prev_break_pos == curr_break_pos) break;
+
+            curr_break_pos = prev_break_pos;
+        }
     }
 
     // End scope related functions

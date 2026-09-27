@@ -1,16 +1,16 @@
-// Both break statements are reached across these calls.
+// Each break site is reached on a different pass through the same loop.
+// @timeout: 2
 // expect: 0
 // expect: 0
 // expect: 1
-fun printBeforeBreak(stopAt) {
+var run = 0;
+while (run < 2) {
   var i = 0;
-  while (i < 5) {
-    if (i == stopAt) break;
-    if (i == 2) break;
+  loop {
+    if (run == 0 and i == 1) break;
+    if (run == 1 and i == 2) break;
     print i;
     i = i + 1;
   }
+  run = run + 1;
 }
-
-printBeforeBreak(1);
-printBeforeBreak(3);

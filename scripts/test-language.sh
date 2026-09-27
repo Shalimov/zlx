@@ -7,6 +7,7 @@
 #   // expect runtime error: message
 #   // [line N] Error ...
 #   // @failure[: expected error message] (asserts exit code != 0 and optional error message)
+#   // @timeout: seconds (limits a test that may otherwise hang)
 
 set -u
 
@@ -153,6 +154,10 @@ failure_expectations() {
     sed -nE 's#.*//[[:space:]]*@failure:?[[:space:]]*(.*)$#\1#p' "$1"
 }
 
+test_timeout() {
+    sed -nE 's#^[[:space:]]*//[[:space:]]*@timeout:[[:space:]]*([0-9]+)[[:space:]]*$#\1#p' "$1" | head -n 1
+}
+
 printf '\n%-5s %-8s' 'No.' 'Result'
 printf ' %-54s' 'Test'
 ((SHOW_TIME)) && printf ' %10s' 'Time'
@@ -173,17 +178,49 @@ for test_file in "${TESTS[@]}"; do
 
     # Perl supplies a portable sub-second timer on macOS and Linux. Its marker
     # is removed before comparing the interpreter output.
-    perl -MTime::HiRes=time -e '
-        my $start = time;
-        system @ARGV;
-        my $status = $?;
-        printf STDERR "\n__ZLX_DURATION__%.6f\n", time - $start;
-        exit($status == -1 ? 127 : $status >> 8);
-    ' "$BINARY" "$test_file" >"$log_file" 2>&1
+    timeout_seconds="$(test_timeout "$test_file")"
+    if [[ -n "$timeout_seconds" ]]; then
+        perl -MTime::HiRes=time,sleep -MPOSIX=:sys_wait_h -e '
+            my $timeout = shift @ARGV;
+            my $start = time;
+            my $pid = fork;
+            exit 127 unless defined $pid;
+            if ($pid == 0) {
+                exec @ARGV;
+                exit 127;
+            }
+            my $status;
+            while (1) {
+                my $finished = waitpid($pid, WNOHANG);
+                if ($finished == $pid) {
+                    $status = $?;
+                    last;
+                }
+                if (time - $start >= $timeout) {
+                    kill "TERM", $pid;
+                    waitpid($pid, 0);
+                    printf STDERR "\n__ZLX_TIMEOUT__%s\n", $timeout;
+                    printf STDERR "\n__ZLX_DURATION__%.6f\n", time - $start;
+                    exit 124;
+                }
+                sleep 0.01;
+            }
+            printf STDERR "\n__ZLX_DURATION__%.6f\n", time - $start;
+            exit($status == -1 ? 127 : $status >> 8);
+        ' "$timeout_seconds" "$BINARY" "$test_file" >"$log_file" 2>&1
+    else
+        perl -MTime::HiRes=time -e '
+            my $start = time;
+            system @ARGV;
+            my $status = $?;
+            printf STDERR "\n__ZLX_DURATION__%.6f\n", time - $start;
+            exit($status == -1 ? 127 : $status >> 8);
+        ' "$BINARY" "$test_file" >"$log_file" 2>&1
+    fi
     exit_code=$?
 
     duration="$(sed -nE 's/^__ZLX_DURATION__([0-9.]+)$/\1/p' "$log_file" | tail -n 1)"
-    sed '/^__ZLX_DURATION__/d' "$log_file" >"$log_file.clean"
+    sed '/^__ZLX_DURATION__/d; /^__ZLX_TIMEOUT__/d' "$log_file" >"$log_file.clean"
     actual="$(normalize_debug_output <"$log_file.clean")"
     expected="$(expected_output "$test_file")"
     runtime_errors="$(runtime_expectations "$test_file")"
@@ -191,7 +228,9 @@ for test_file in "${TESTS[@]}"; do
     failure_errors="$(failure_expectations "$test_file")"
     reason=""
 
-    if has_failure_modifier "$test_file"; then
+    if ((exit_code == 124)) && grep -q '^__ZLX_TIMEOUT__' "$log_file"; then
+        reason="timed out after $timeout_seconds seconds"
+    elif has_failure_modifier "$test_file"; then
         if ((exit_code == 0)); then
             reason='expected execution to fail (exit non-zero), but it succeeded'
         else

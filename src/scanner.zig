@@ -42,6 +42,7 @@ pub const TokenType = enum {
     token_for,
     token_while,
     token_loop,
+    token_break,
     token_continue,
     token_fun,
     token_return,
@@ -225,6 +226,7 @@ pub const Scanner = struct {
     fn inferIdentifierToken(self: *Scanner) TokenType {
         return switch (self.start[0]) {
             'a' => self.checkKeyword(1, "nd", .token_and),
+            'b' => self.checkKeyword(1, "reak", .token_break),
             'c' => if (self.current - self.start > 1) switch (self.start[1]) {
                 'o' => if (self.current - self.start > 2) switch (self.start[2]) {
                     'n' => if (self.current - self.start > 3) switch (self.start[3]) {
@@ -352,7 +354,7 @@ test "expect parsing string tokens" {
     var scanner: Scanner = undefined;
     scanner.init(source);
 
-    try expectToken(&scanner, TokenType.token_string, "\"sum of technologies\"");
+    try expectToken(&scanner, .token_string, "\"sum of technologies\"");
     try expectEof(&scanner);
 }
 
@@ -361,16 +363,16 @@ test "expect paraing number tokens" {
     var scanner: Scanner = undefined;
     scanner.init(source);
 
-    try expectToken(&scanner, TokenType.token_number, "123");
-    try expectToken(&scanner, TokenType.token_number, "443.432");
-    try expectToken(&scanner, TokenType.token_number, "0.343");
-    try expectToken(&scanner, TokenType.token_number, "54353453");
+    try expectToken(&scanner, .token_number, "123");
+    try expectToken(&scanner, .token_number, "443.432");
+    try expectToken(&scanner, .token_number, "0.343");
+    try expectToken(&scanner, .token_number, "54353453");
     try expectEof(&scanner);
 }
 
 test "expect parsing keywords" {
     const source =
-        \\ and or class else
+        \\ and or class else break
         \\ if in nil print return
         \\ true this
         \\ super var const while
@@ -380,26 +382,27 @@ test "expect parsing keywords" {
     var scanner: Scanner = undefined;
     scanner.init(source);
 
-    try expectToken(&scanner, TokenType.token_and, "and");
-    try expectToken(&scanner, TokenType.token_or, "or");
-    try expectToken(&scanner, TokenType.token_class, "class");
-    try expectToken(&scanner, TokenType.token_else, "else");
-    try expectToken(&scanner, TokenType.token_if, "if");
-    try expectToken(&scanner, TokenType.token_in, "in");
-    try expectToken(&scanner, TokenType.token_nil, "nil");
-    try expectToken(&scanner, TokenType.token_print, "print");
-    try expectToken(&scanner, TokenType.token_return, "return");
-    try expectToken(&scanner, TokenType.token_true, "true");
-    try expectToken(&scanner, TokenType.token_this, "this");
-    try expectToken(&scanner, TokenType.token_super, "super");
-    try expectToken(&scanner, TokenType.token_var, "var");
-    try expectToken(&scanner, TokenType.token_const, "const");
-    try expectToken(&scanner, TokenType.token_while, "while");
-    try expectToken(&scanner, TokenType.token_false, "false");
-    try expectToken(&scanner, TokenType.token_for, "for");
-    try expectToken(&scanner, TokenType.token_fun, "fun");
-    try expectToken(&scanner, TokenType.token_loop, "loop");
-    try expectToken(&scanner, TokenType.token_continue, "continue");
+    try expectToken(&scanner, .token_and, "and");
+    try expectToken(&scanner, .token_or, "or");
+    try expectToken(&scanner, .token_class, "class");
+    try expectToken(&scanner, .token_else, "else");
+    try expectToken(&scanner, .token_break, "break");
+    try expectToken(&scanner, .token_if, "if");
+    try expectToken(&scanner, .token_in, "in");
+    try expectToken(&scanner, .token_nil, "nil");
+    try expectToken(&scanner, .token_print, "print");
+    try expectToken(&scanner, .token_return, "return");
+    try expectToken(&scanner, .token_true, "true");
+    try expectToken(&scanner, .token_this, "this");
+    try expectToken(&scanner, .token_super, "super");
+    try expectToken(&scanner, .token_var, "var");
+    try expectToken(&scanner, .token_const, "const");
+    try expectToken(&scanner, .token_while, "while");
+    try expectToken(&scanner, .token_false, "false");
+    try expectToken(&scanner, .token_for, "for");
+    try expectToken(&scanner, .token_fun, "fun");
+    try expectToken(&scanner, .token_loop, "loop");
+    try expectToken(&scanner, .token_continue, "continue");
 
     try expectEof(&scanner);
 }
@@ -420,30 +423,30 @@ test "expect parsing identifiers" {
     var scanner: Scanner = undefined;
     scanner.init(keyword_src);
 
-    try expectToken(&scanner, TokenType.token_identifier, "words");
-    try expectToken(&scanner, TokenType.token_identifier, "is");
-    try expectToken(&scanner, TokenType.token_identifier, "here");
-    try expectToken(&scanner, TokenType.token_identifier, "classy");
-    try expectToken(&scanner, TokenType.token_identifier, "elsewhere");
-    try expectToken(&scanner, TokenType.token_identifier, "ififif");
-    try expectToken(&scanner, TokenType.token_identifier, "ininin");
-    try expectToken(&scanner, TokenType.token_identifier, "andor");
-    try expectToken(&scanner, TokenType.token_identifier, "orand");
-    try expectToken(&scanner, TokenType.token_identifier, "nilable");
-    try expectToken(&scanner, TokenType.token_identifier, "printy");
-    try expectToken(&scanner, TokenType.token_identifier, "returny");
-    try expectToken(&scanner, TokenType.token_identifier, "superbowl");
-    try expectToken(&scanner, TokenType.token_identifier, "vario");
-    try expectToken(&scanner, TokenType.token_identifier, "constio");
-    try expectToken(&scanner, TokenType.token_identifier, "whileboy");
-    try expectToken(&scanner, TokenType.token_identifier, "truely");
-    try expectToken(&scanner, TokenType.token_identifier, "falseie");
-    try expectToken(&scanner, TokenType.token_identifier, "forly");
-    try expectToken(&scanner, TokenType.token_identifier, "funly");
-    try expectToken(&scanner, TokenType.token_identifier, "funfun");
-    try expectToken(&scanner, TokenType.token_identifier, "thisisnotakeyword");
-    try expectToken(&scanner, TokenType.token_identifier, "looploop");
-    try expectToken(&scanner, TokenType.token_identifier, "continuecontinue");
+    try expectToken(&scanner, .token_identifier, "words");
+    try expectToken(&scanner, .token_identifier, "is");
+    try expectToken(&scanner, .token_identifier, "here");
+    try expectToken(&scanner, .token_identifier, "classy");
+    try expectToken(&scanner, .token_identifier, "elsewhere");
+    try expectToken(&scanner, .token_identifier, "ififif");
+    try expectToken(&scanner, .token_identifier, "ininin");
+    try expectToken(&scanner, .token_identifier, "andor");
+    try expectToken(&scanner, .token_identifier, "orand");
+    try expectToken(&scanner, .token_identifier, "nilable");
+    try expectToken(&scanner, .token_identifier, "printy");
+    try expectToken(&scanner, .token_identifier, "returny");
+    try expectToken(&scanner, .token_identifier, "superbowl");
+    try expectToken(&scanner, .token_identifier, "vario");
+    try expectToken(&scanner, .token_identifier, "constio");
+    try expectToken(&scanner, .token_identifier, "whileboy");
+    try expectToken(&scanner, .token_identifier, "truely");
+    try expectToken(&scanner, .token_identifier, "falseie");
+    try expectToken(&scanner, .token_identifier, "forly");
+    try expectToken(&scanner, .token_identifier, "funly");
+    try expectToken(&scanner, .token_identifier, "funfun");
+    try expectToken(&scanner, .token_identifier, "thisisnotakeyword");
+    try expectToken(&scanner, .token_identifier, "looploop");
+    try expectToken(&scanner, .token_identifier, "continuecontinue");
     try expectEof(&scanner);
 }
 
@@ -453,12 +456,12 @@ test "expect to recognize unexpected character in the seq of tokens" {
     var scanner: Scanner = undefined;
     scanner.init(listing);
 
-    try expectToken(&scanner, TokenType.token_var, "var");
-    try expectToken(&scanner, TokenType.token_identifier, "keyword");
-    try expectToken(&scanner, TokenType.token_equal, "=");
-    try expectToken(&scanner, TokenType.token_number, "1");
-    try expectToken(&scanner, TokenType.token_plus, "+");
-    try expectToken(&scanner, TokenType.token_error, "Unexpected character.");
+    try expectToken(&scanner, .token_var, "var");
+    try expectToken(&scanner, .token_identifier, "keyword");
+    try expectToken(&scanner, .token_equal, "=");
+    try expectToken(&scanner, .token_number, "1");
+    try expectToken(&scanner, .token_plus, "+");
+    try expectToken(&scanner, .token_error, "Unexpected character.");
     try expectEof(&scanner);
 }
 
@@ -468,8 +471,8 @@ test "expect to recognize unterminated string" {
     var scanner: Scanner = undefined;
     scanner.init(listing);
 
-    try expectToken(&scanner, TokenType.token_var, "var");
-    try expectToken(&scanner, TokenType.token_identifier, "keyword");
-    try expectToken(&scanner, TokenType.token_equal, "=");
-    try expectToken(&scanner, TokenType.token_error, "Unterminated string.");
+    try expectToken(&scanner, .token_var, "var");
+    try expectToken(&scanner, .token_identifier, "keyword");
+    try expectToken(&scanner, .token_equal, "=");
+    try expectToken(&scanner, .token_error, "Unterminated string.");
 }

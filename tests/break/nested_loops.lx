@@ -1,11 +1,14 @@
-// A break exits only the innermost loop.
+// The inner break ends each inner loop; the outer break ends the for loop.
+// @timeout: 2
 // expect: 0
 // expect: 1
 // expect: 2
 // expect: 10
 // expect: 11
 // expect: 12
-for (var i in 0..2) {
+// expect: done
+for (var i in 0..3) {
+  if (i == 2) break;
   var j = 0;
   loop {
     if (j == 3) break;
@@ -13,3 +16,4 @@ for (var i in 0..2) {
     j = j + 1;
   }
 }
+print "done";

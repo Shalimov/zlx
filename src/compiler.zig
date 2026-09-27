@@ -648,7 +648,7 @@ pub const Compiler = struct {
 
     fn patchBreak(self: *Compiler, jump_op_offset: usize) void {
         const items = self.getCurrentChunk().code.items;
-        const prev_break_offset = jump_op_offset - self.enclosing_env.closest_break_head;
+        const prev_break_offset = if (self.enclosing_env.closest_break_head == 0) 0 else jump_op_offset - self.enclosing_env.closest_break_head;
 
         if (prev_break_offset > MAX_U16) {
             self.errorAtCurr("Too many code lines to jump over.");
@@ -733,14 +733,15 @@ pub const Compiler = struct {
         const code_instructions = self.getCurrentChunk().code.items;
 
         var curr_break_pos = self.enclosing_env.closest_break_head;
-        var prev_break_pos: usize = undefined;
 
         while (curr_break_pos != stop_offset) {
-            prev_break_pos = curr_break_pos - ((@as(u16, code_instructions[curr_break_pos + 1]) << 8) + @as(u16, code_instructions[curr_break_pos]));
+            const prev_break_offset = (@as(u16, code_instructions[curr_break_pos + 1]) << 8) + @as(u16, code_instructions[curr_break_pos]);
 
             self.patchJump(curr_break_pos);
 
-            curr_break_pos = prev_break_pos;
+            if (prev_break_offset == 0) break;
+
+            curr_break_pos -= prev_break_offset;
         }
     }
 

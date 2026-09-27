@@ -129,14 +129,14 @@ const EnclosingEnvironment = struct {
         in_loop: bool,
     };
 
-    closest_break_head_offset: usize,
+    closest_break_head: usize,
     closest_loop_start_offset: usize,
     closest_loop_entry_depth: i32,
     meta: EnvMeta,
 
     fn init() @This() {
         return .{
-            .closest_break_head_offset = MAX_USIZE,
+            .closest_break_head = 0,
             .closest_loop_start_offset = MAX_USIZE,
             .closest_loop_entry_depth = -1,
             .meta = .{
@@ -431,12 +431,7 @@ pub const Compiler = struct {
 
         const current_break_jump = try self.emitJump(alloc, .op_jump_frwd);
 
-        // Trick is to use current_break_jump to point out to itself if there is no break before
-        // it is a stop point to follow to setup break jumps in the code
-        const prev_break_pos = if (self.enclosing_env.closest_break_head_offset == MAX_USIZE) current_break_jump else self.enclosing_env.closest_break_head_offset;
-        self.patchJumpTo(current_break_jump, prev_break_pos);
-
-        self.enclosing_env.closest_break_head_offset = current_break_jump;
+        self.patchBreak(current_break_jump);
     }
 
     fn continueStatement(self: *Compiler, alloc: std.mem.Allocator) !void {
@@ -639,22 +634,30 @@ pub const Compiler = struct {
         return self.getCurrentChunk().code.items.len - 2;
     }
 
-    inline fn patchJump(self: *Compiler, jump_op_offset: usize) void {
+    fn patchJump(self: *Compiler, jump_op_offset: usize) void {
         const items = self.getCurrentChunk().code.items;
         const current_jump_pos = items.len - jump_op_offset - 2;
 
-        self.patchJumpTo(jump_op_offset, current_jump_pos);
-    }
-
-    fn patchJumpTo(self: *Compiler, jump_to_patch_pos: usize, jump_target_pos: usize) void {
-        const items = self.getCurrentChunk().code.items;
-
-        if (jump_to_patch_pos > MAX_U16) {
+        if (current_jump_pos > MAX_U16) {
             self.errorAtCurr("Too many code lines to jump over.");
         }
 
-        items[jump_to_patch_pos] = @intCast(jump_target_pos & 0xFF);
-        items[jump_to_patch_pos + 1] = @intCast((jump_target_pos >> 8) & 0xFF);
+        items[jump_op_offset] = @intCast(current_jump_pos & 0xFF);
+        items[jump_op_offset + 1] = @intCast((current_jump_pos >> 8) & 0xFF);
+    }
+
+    fn patchBreak(self: *Compiler, jump_op_offset: usize) void {
+        const items = self.getCurrentChunk().code.items;
+        const prev_break_offset = jump_op_offset - self.enclosing_env.closest_break_head;
+
+        if (prev_break_offset > MAX_U16) {
+            self.errorAtCurr("Too many code lines to jump over.");
+        }
+
+        items[jump_op_offset] = @intCast(prev_break_offset & 0xFF);
+        items[jump_op_offset + 1] = @intCast((prev_break_offset >> 8) & 0xFF);
+
+        self.enclosing_env.closest_break_head = jump_op_offset;
     }
 
     // Scope and local related code related functions
@@ -700,7 +703,7 @@ pub const Compiler = struct {
 
     inline fn setupLoopMetadata(self: *Compiler, start_offset: usize) EnclosingEnvironment {
         const enclosing_environment: EnclosingEnvironment = .{
-            .closest_break_head_offset = self.enclosing_env.closest_break_head_offset,
+            .closest_break_head = self.enclosing_env.closest_break_head,
             .closest_loop_entry_depth = self.enclosing_env.closest_loop_entry_depth,
             .closest_loop_start_offset = self.enclosing_env.closest_loop_start_offset,
             .meta = self.enclosing_env.meta,
@@ -715,30 +718,27 @@ pub const Compiler = struct {
 
     inline fn restoreLoopMetadata(self: *Compiler, enclosing_environment: EnclosingEnvironment) void {
         self.enclosing_env.closest_loop_entry_depth = enclosing_environment.closest_loop_entry_depth;
-        self.enclosing_env.closest_break_head_offset = enclosing_environment.closest_break_head_offset;
+        self.enclosing_env.closest_break_head = enclosing_environment.closest_break_head;
         self.enclosing_env.closest_loop_start_offset = enclosing_environment.closest_loop_start_offset;
         self.enclosing_env.meta = enclosing_environment.meta;
     }
 
     fn rectifyBreaksExit(self: *Compiler, outer_enclosing_environment: EnclosingEnvironment) void {
-        const stop_offset = outer_enclosing_environment.closest_break_head_offset;
+        const stop_offset = outer_enclosing_environment.closest_break_head;
 
-        if (stop_offset == self.enclosing_env.closest_break_head_offset) {
+        if (stop_offset == self.enclosing_env.closest_break_head) {
             return;
         }
 
-        const current_chunk = self.getCurrentChunk();
-        const code_instructions = current_chunk.code.items;
+        const code_instructions = self.getCurrentChunk().code.items;
 
-        var curr_break_pos = self.enclosing_env.closest_break_head_offset;
+        var curr_break_pos = self.enclosing_env.closest_break_head;
         var prev_break_pos: usize = undefined;
 
         while (curr_break_pos != stop_offset) {
-            prev_break_pos = (@as(u16, code_instructions[curr_break_pos + 1]) << 8) + @as(u16, code_instructions[curr_break_pos]);
+            prev_break_pos = curr_break_pos - ((@as(u16, code_instructions[curr_break_pos + 1]) << 8) + @as(u16, code_instructions[curr_break_pos]));
 
             self.patchJump(curr_break_pos);
-
-            if (prev_break_pos == curr_break_pos) break;
 
             curr_break_pos = prev_break_pos;
         }

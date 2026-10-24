@@ -66,8 +66,8 @@ fn runFile(alloc: std.mem.Allocator, io: Io, virt: *VirtualMachine, path: [:0]co
     try interpret(alloc, virt, script);
 }
 
-fn interpret(alloc: std.mem.Allocator, virt: *VirtualMachine, line: []u8) !void {
-    try virt.interpret(alloc, line);
+fn interpret(alloc: std.mem.Allocator, virt: *VirtualMachine, script_line: []u8) !void {
+    try virt.interpret(alloc, script_line);
 }
 
 pub fn main(init: std.process.Init) !void {

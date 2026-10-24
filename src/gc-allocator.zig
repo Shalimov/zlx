@@ -6,6 +6,7 @@ const getHash = @import("fnv-hash.zig").getHash;
 
 const Object = objects.Object;
 const ObjectString = objects.ObjectString;
+const ObjectFunction = objects.ObjectFunction;
 
 pub const GcAllocator = struct {
     internalized_strings: HashTable,
@@ -79,7 +80,7 @@ pub const GcAllocator = struct {
         self.destroyObjectInternal(obj);
     }
 
-    pub fn as(target_alloc: std.mem.Allocator) *GcAllocator {
+    pub fn from(target_alloc: std.mem.Allocator) *GcAllocator {
         return @ptrCast(@alignCast(target_alloc.ptr));
     }
 
@@ -89,7 +90,7 @@ pub const GcAllocator = struct {
         self.freeObjects();
     }
 
-    fn createObjectString(self: *GcAllocator) !*ObjectString {
+    pub fn createObjectString(self: *GcAllocator) !*ObjectString {
         const obj_str = try self.inner_allocator.create(ObjectString);
 
         obj_str.* = .{ .hash = 0, .object = .{ .type = .string }, .str = undefined };
@@ -97,6 +98,21 @@ pub const GcAllocator = struct {
         self.addObjectToPool(&obj_str.object);
 
         return obj_str;
+    }
+
+    pub fn createObjectFunction(self: *GcAllocator) !*ObjectFunction {
+        const obj_fn = try self.inner_allocator.create(ObjectFunction);
+
+        obj_fn.* = .{
+            .arity = 0,
+            .object = .{ .type = .function },
+            .body = .init,
+            .name = null,
+        };
+
+        self.addObjectToPool(&obj_fn.object);
+
+        return obj_fn;
     }
 
     fn addObjectToPool(self: *GcAllocator, obj: *Object) void {
@@ -146,6 +162,12 @@ pub const GcAllocator = struct {
 
     fn destroyObjectInternal(self: *GcAllocator, obj: *Object) void {
         switch (obj.type) {
+            .function => {
+                const obj_fn = obj.as(ObjectFunction);
+
+                obj_fn.body.deinit(self.inner_allocator);
+                self.inner_allocator.destroy(obj_fn);
+            },
             .string => {
                 const obj_str = obj.as(ObjectString);
 

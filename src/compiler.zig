@@ -7,13 +7,16 @@ const builtin = @import("builtin");
 const Chunk = @import("chunk.zig").Chunk;
 const debug = @import("debug.zig");
 const GcAllocator = @import("gc-allocator.zig").GcAllocator;
-const ObjectString = @import("object.zig").ObjectString;
+const objects = @import("object.zig");
 const OpCode = @import("op_code.zig").OpCode;
 const scn = @import("scanner.zig");
 const Scanner = scn.Scanner;
 const Token = scn.Token;
 const TokenType = scn.TokenType;
 const Value = @import("value.zig").Value;
+
+const ObjectString = objects.ObjectString;
+const ObjectFunction = objects.ObjectFunction;
 
 const Precedence = enum {
     ex_none,
@@ -33,60 +36,67 @@ const rules = rls: {
     const RuleFn = *const fn (self: *Compiler, alloc: std.mem.Allocator, can_assign: bool) anyerror!void;
     const ParseRule = struct { prefix: ?RuleFn, infix: ?RuleFn, precedence: Precedence };
 
-    var table = [_]ParseRule{.{ .prefix = null, .infix = null, .precedence = .ex_none }} ** @typeInfo(TokenType).@"enum".fields.len;
+    const enum_info = @typeInfo(TokenType).@"enum";
 
-    table[@intFromEnum(TokenType.token_left_paren)] = .{ .prefix = Compiler.grouping, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_right_paren)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_left_square)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_right_square)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_left_brace)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_right_brace)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_comma)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_dot)] = .{ .prefix = null, .infix = null, .precedence = .ex_call };
-    table[@intFromEnum(TokenType.token_dot_dot)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_minus)] = .{ .prefix = Compiler.unary, .infix = Compiler.binary, .precedence = .ex_term };
-    table[@intFromEnum(TokenType.token_plus)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_term };
-    table[@intFromEnum(TokenType.token_plus_plus)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_term };
-    table[@intFromEnum(TokenType.token_semicolon)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_slash)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_factor };
-    table[@intFromEnum(TokenType.token_star)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_factor };
-    table[@intFromEnum(TokenType.token_bang)] = .{ .prefix = Compiler.unary, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_bang_equal)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_equality };
-    table[@intFromEnum(TokenType.token_equal)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_equal_equal)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_equality };
-    table[@intFromEnum(TokenType.token_greater)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_comparison };
-    table[@intFromEnum(TokenType.token_greater_equal)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_comparison };
-    table[@intFromEnum(TokenType.token_less)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_comparison };
-    table[@intFromEnum(TokenType.token_less_equal)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_comparison };
-    table[@intFromEnum(TokenType.token_identifier)] = .{ .prefix = Compiler.variable, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_string)] = .{ .prefix = Compiler.string, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_number)] = .{ .prefix = Compiler.number, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_true)] = .{ .prefix = Compiler.literal, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_false)] = .{ .prefix = Compiler.literal, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_or)] = .{ .prefix = null, .infix = Compiler.logicOr, .precedence = .ex_or };
-    table[@intFromEnum(TokenType.token_and)] = .{ .prefix = null, .infix = Compiler.logicAnd, .precedence = .ex_and };
-    table[@intFromEnum(TokenType.token_in)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_if)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_else)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_for)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_while)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_fun)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_return)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_class)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_super)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_this)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_var)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_const)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_nil)] = .{ .prefix = Compiler.literal, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_print)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_error)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@intFromEnum(TokenType.token_eof)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    var table: [enum_info.field_names.len]ParseRule = @splat(ParseRule{ .prefix = null, .infix = null, .precedence = .ex_none });
+
+    table[@backingInt(TokenType.token_left_paren)] = .{ .prefix = Compiler.grouping, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_right_paren)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_left_square)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_right_square)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_left_brace)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_right_brace)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_comma)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_dot)] = .{ .prefix = null, .infix = null, .precedence = .ex_call };
+    table[@backingInt(TokenType.token_dot_dot)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_minus)] = .{ .prefix = Compiler.unary, .infix = Compiler.binary, .precedence = .ex_term };
+    table[@backingInt(TokenType.token_plus)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_term };
+    table[@backingInt(TokenType.token_plus_plus)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_term };
+    table[@backingInt(TokenType.token_semicolon)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_slash)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_factor };
+    table[@backingInt(TokenType.token_star)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_factor };
+    table[@backingInt(TokenType.token_bang)] = .{ .prefix = Compiler.unary, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_bang_equal)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_equality };
+    table[@backingInt(TokenType.token_equal)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_equal_equal)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_equality };
+    table[@backingInt(TokenType.token_greater)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_comparison };
+    table[@backingInt(TokenType.token_greater_equal)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_comparison };
+    table[@backingInt(TokenType.token_less)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_comparison };
+    table[@backingInt(TokenType.token_less_equal)] = .{ .prefix = null, .infix = Compiler.binary, .precedence = .ex_comparison };
+    table[@backingInt(TokenType.token_identifier)] = .{ .prefix = Compiler.variable, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_string)] = .{ .prefix = Compiler.string, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_number)] = .{ .prefix = Compiler.number, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_true)] = .{ .prefix = Compiler.literal, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_false)] = .{ .prefix = Compiler.literal, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_or)] = .{ .prefix = null, .infix = Compiler.logicOr, .precedence = .ex_or };
+    table[@backingInt(TokenType.token_and)] = .{ .prefix = null, .infix = Compiler.logicAnd, .precedence = .ex_and };
+    table[@backingInt(TokenType.token_in)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_if)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_else)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_for)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_while)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_fun)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_return)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_class)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_super)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_this)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_var)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_const)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_nil)] = .{ .prefix = Compiler.literal, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_print)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_error)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_eof)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
 
     break :rls table;
 };
 
 pub const CompilerError = error{
     ParseError,
+};
+
+const FunctionType = enum(u8) {
+    script,
+    function,
 };
 
 const MAX_U8 = std.math.maxInt(u8);
@@ -156,14 +166,15 @@ pub const Compiler = struct {
 
     scanner: Scanner,
     parser: Parser,
-    compiling_chunk: *Chunk,
+
+    function: *ObjectFunction,
+    function_type: FunctionType,
 
     enclosing_env: EnclosingEnvironment,
 
-    pub fn compile(self: *Compiler, alloc: std.mem.Allocator, source: []const u8, chunk: *Chunk) !void {
-        self.init();
+    pub fn compile(self: *Compiler, alloc: std.mem.Allocator, source: []const u8) !*ObjectFunction {
+        try self.init(alloc, .script);
 
-        self.compiling_chunk = chunk;
         self.scanner.init(source);
 
         self.advance();
@@ -172,17 +183,21 @@ pub const Compiler = struct {
             try self.declaration(alloc);
         }
 
-        try self.endCompilation(alloc);
+        const compiled_fn = try self.endCompilation(alloc);
 
-        if (self.parser.had_error) {
-            self.parser.had_error = false;
-            return CompilerError.ParseError;
-        }
+        return if (self.parser.had_error) CompilerError.ParseError else compiled_fn;
     }
 
-    inline fn init(self: *Compiler) void {
+    fn init(self: *Compiler, alloc: std.mem.Allocator, function_type: FunctionType) !void {
+        const gc_alloc = GcAllocator.from(alloc);
+        self.function_type = function_type;
+
         self.locals_count = 0;
         self.locals_depth = 0;
+
+        self.function = try gc_alloc.createObjectFunction();
+
+        self.addLocal("", .{ .initialized = true, .mutable = false });
 
         self.enclosing_env = .init();
 
@@ -486,9 +501,9 @@ pub const Compiler = struct {
 
     fn binary(self: *Compiler, alloc: std.mem.Allocator, _: bool) !void {
         const op_type = self.parser.previous.token_type;
-        const precedence = rules[@intFromEnum(op_type)].precedence;
+        const precedence = rules[@backingInt(op_type)].precedence;
 
-        try self.parsePrecedence(alloc, @enumFromInt(@intFromEnum(precedence) + 1));
+        try self.parsePrecedence(alloc, @fromBackingInt(@intCast(@backingInt(precedence) + 1)));
 
         try switch (op_type) {
             .token_plus => self.emitOp(alloc, .op_add),
@@ -563,9 +578,9 @@ pub const Compiler = struct {
     fn parsePrecedence(self: *Compiler, alloc: std.mem.Allocator, precedence: Precedence) !void {
         self.advance();
 
-        const can_assign = @intFromEnum(precedence) <= @intFromEnum(Precedence.ex_assignment);
+        const can_assign = @backingInt(precedence) <= @backingInt(Precedence.ex_assignment);
 
-        if (rules[@intFromEnum(self.parser.previous.token_type)].prefix) |prefix_rule| {
+        if (rules[@backingInt(self.parser.previous.token_type)].prefix) |prefix_rule| {
             try prefix_rule(self, alloc, can_assign);
         } else {
             self.errorAtPrev("Unexpected expression.");
@@ -573,10 +588,10 @@ pub const Compiler = struct {
             return;
         }
 
-        while (@intFromEnum(precedence) <= @intFromEnum(rules[@intFromEnum(self.parser.current.token_type)].precedence)) {
+        while (@backingInt(precedence) <= @backingInt(rules[@backingInt(self.parser.current.token_type)].precedence)) {
             self.advance();
 
-            if (rules[@intFromEnum(self.parser.previous.token_type)].infix) |infix_rule| {
+            if (rules[@backingInt(self.parser.previous.token_type)].infix) |infix_rule| {
                 try infix_rule(self, alloc, can_assign);
             }
         }
@@ -819,7 +834,7 @@ pub const Compiler = struct {
     }
 
     inline fn emitOp(self: *Compiler, alloc: std.mem.Allocator, op: OpCode) !void {
-        try self.emitByte(alloc, @intFromEnum(op));
+        try self.emitByte(alloc, @backingInt(op));
     }
 
     fn emitOps(self: *Compiler, alloc: std.mem.Allocator, op1: OpCode, op2: OpCode) !void {
@@ -831,12 +846,19 @@ pub const Compiler = struct {
         return self.emitOp(alloc, .op_return);
     }
 
-    fn endCompilation(self: *Compiler, alloc: std.mem.Allocator) !void {
+    fn endCompilation(self: *Compiler, alloc: std.mem.Allocator) !*ObjectFunction {
         try self.emitOpReturn(alloc);
 
-        if (builtin.mode == .Debug) {
-            debug.disassembleChunk(self.getCurrentChunk(), "code");
+        const compiling_fn = self.function;
+
+        if (builtin.mode == .debug) {
+            if (!self.parser.had_error) {
+                const name = if (self.function.name) |n| n.str else "<script>";
+                debug.disassembleChunk(self.getCurrentChunk(), name);
+            }
         }
+
+        return compiling_fn;
     }
 
     fn emitPopN(self: *Compiler, alloc: std.mem.Allocator, count: usize) !void {
@@ -866,7 +888,7 @@ pub const Compiler = struct {
     }
 
     inline fn getCurrentChunk(self: *Compiler) *Chunk {
-        return self.compiling_chunk;
+        return &self.function.body;
     }
 
     // Error reporting helpers.

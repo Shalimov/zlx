@@ -3,6 +3,7 @@ const std = @import("std");
 const objects = @import("object.zig");
 
 const Object = objects.Object;
+const ObjectFunction = objects.ObjectFunction;
 const ObjectString = objects.ObjectString;
 
 pub const Value = union(enum) {
@@ -48,6 +49,17 @@ pub const Value = union(enum) {
                 .string => {
                     const obj_str = obj.as(ObjectString);
                     std.debug.print("{s}", .{obj_str.str});
+                },
+                .function => {
+                    const obj_fn = obj.as(ObjectFunction);
+
+                    if (obj_fn.name) |n| {
+                        @branchHint(.likely);
+
+                        std.debug.print("<fn {s}>", .{n.str});
+                    } else {
+                        std.debug.print("<script>", .{});
+                    }
                 },
             },
         }

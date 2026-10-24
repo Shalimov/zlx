@@ -24,12 +24,9 @@ pub const VirtualMachine = struct {
     compiler: Compiler,
 
     pub fn interpret(self: *Self, alloc: std.mem.Allocator, source: []const u8) !void {
-        var chunk: Chunk = .init;
-        defer chunk.deinit(alloc);
+        const script = try self.compiler.compile(alloc, source);
 
-        try self.compiler.compile(alloc, source, &chunk);
-
-        self.chunk = &chunk;
+        self.chunk = &script.body;
         self.ip = self.chunk.code.items.ptr;
 
         try self.run(alloc);
@@ -47,7 +44,7 @@ pub const VirtualMachine = struct {
         var modifier_wide = false;
 
         while (true) {
-            if (builtin.mode == .Debug and !modifier_wide) {
+            if (builtin.mode == .debug and !modifier_wide) {
                 std.debug.print("        ", .{});
 
                 for (self.stack.items) |item| {
@@ -65,7 +62,7 @@ pub const VirtualMachine = struct {
                 _ = debug.disassembleInstruction(self.chunk, self.ip - self.chunk.code.items.ptr);
             }
 
-            const op_code: OpCode = @enumFromInt(self.advance());
+            const op_code: OpCode = @fromBackingInt(@intCast(self.advance()));
 
             switch (op_code) {
                 .op_negate => {
@@ -205,7 +202,7 @@ pub const VirtualMachine = struct {
                 },
                 .op_define_global => {
                     defer modifier_wide = false;
-                    const gc = GcAllocator.as(alloc);
+                    const gc = GcAllocator.from(alloc);
                     const key = self.getConstantValue(modifier_wide);
 
                     const key_str = key.val_obj.as(ObjectString);
@@ -215,7 +212,7 @@ pub const VirtualMachine = struct {
                 },
                 .op_get_global => {
                     defer modifier_wide = false;
-                    const gc = GcAllocator.as(alloc);
+                    const gc = GcAllocator.from(alloc);
                     const val = self.getConstantValue(modifier_wide);
 
                     const key_str = val.val_obj.as(ObjectString);
@@ -230,7 +227,7 @@ pub const VirtualMachine = struct {
                 },
                 .op_set_global => {
                     defer modifier_wide = false;
-                    const gc = GcAllocator.as(alloc);
+                    const gc = GcAllocator.from(alloc);
                     const val = self.getConstantValue(modifier_wide);
 
                     const key_str = val.val_obj.as(ObjectString);

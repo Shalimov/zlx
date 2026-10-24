@@ -75,7 +75,7 @@ const rules = rls: {
     table[@backingInt(TokenType.token_else)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
     table[@backingInt(TokenType.token_for)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
     table[@backingInt(TokenType.token_while)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
-    table[@backingInt(TokenType.token_fun)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_fn)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
     table[@backingInt(TokenType.token_return)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
     table[@backingInt(TokenType.token_class)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
     table[@backingInt(TokenType.token_super)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
@@ -746,7 +746,7 @@ pub const Compiler = struct {
             if (self.parser.previous.token_type == .token_semicolon) return;
 
             switch (self.parser.current.token_type) {
-                .token_class, .token_fun, .token_var, .token_const, .token_if, .token_loop, .token_for, .token_while, .token_print, .token_return => return,
+                .token_class, .token_fn, .token_var, .token_const, .token_if, .token_loop, .token_for, .token_while, .token_print, .token_return => return,
                 else => self.advance(),
             }
         }

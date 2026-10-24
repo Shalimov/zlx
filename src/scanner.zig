@@ -44,7 +44,7 @@ pub const TokenType = enum {
     token_loop,
     token_break,
     token_continue,
-    token_fun,
+    token_fn,
     token_return,
     token_class,
     token_super,
@@ -243,7 +243,7 @@ pub const Scanner = struct {
             'f' => if (self.current - self.start > 1) switch (self.start[1]) {
                 'a' => self.checkKeyword(2, "lse", .token_false),
                 'o' => self.checkKeyword(2, "r", .token_for),
-                'u' => self.checkKeyword(2, "n", .token_fun),
+                'n' => self.checkKeyword(2, "", .token_fn),
                 else => TokenType.token_identifier,
             } else TokenType.token_identifier,
             'i' => if (self.current - self.start > 1) switch (self.start[1]) {
@@ -376,7 +376,7 @@ test "expect parsing keywords" {
         \\ if in nil print return
         \\ true this
         \\ super var const while
-        \\ false for fun loop
+        \\ false for fn loop
         \\ continue
     ;
     var scanner: Scanner = undefined;
@@ -400,7 +400,7 @@ test "expect parsing keywords" {
     try expectToken(&scanner, .token_while, "while");
     try expectToken(&scanner, .token_false, "false");
     try expectToken(&scanner, .token_for, "for");
-    try expectToken(&scanner, .token_fun, "fun");
+    try expectToken(&scanner, .token_fn, "fn");
     try expectToken(&scanner, .token_loop, "loop");
     try expectToken(&scanner, .token_continue, "continue");
 
@@ -415,8 +415,8 @@ test "expect parsing identifiers" {
         \\ orand nilable
         \\ printy returny superbowl
         \\ vario constio whileboy
-        \\ truely falseie forly funly
-        \\ funfun thisisnotakeyword looploop
+        \\ truely falseie forly fnly
+        \\ fnfn thisisnotakeyword looploop
         \\ continuecontinue
     ;
 
@@ -442,8 +442,8 @@ test "expect parsing identifiers" {
     try expectToken(&scanner, .token_identifier, "truely");
     try expectToken(&scanner, .token_identifier, "falseie");
     try expectToken(&scanner, .token_identifier, "forly");
-    try expectToken(&scanner, .token_identifier, "funly");
-    try expectToken(&scanner, .token_identifier, "funfun");
+    try expectToken(&scanner, .token_identifier, "fnly");
+    try expectToken(&scanner, .token_identifier, "fnfn");
     try expectToken(&scanner, .token_identifier, "thisisnotakeyword");
     try expectToken(&scanner, .token_identifier, "looploop");
     try expectToken(&scanner, .token_identifier, "continuecontinue");

@@ -3,14 +3,14 @@ program        -> declaration* EOF ;
 declaration    -> classDecl
                 | varDecl
                 | constDecl
-                | funDecl
+                | fnDecl
                 | statement ;
 
 classDecl      -> "class" IDENTIFIER ( ( "<" | ">" ) IDENTIFIER )? "{" ( "static"? ( function | protocol ) | property )* "}" ;
 
 varDecl        -> "var" IDENTIFIER ( "=" expression )? ";" ;
 
-funDecl        -> "fun" function ;
+fnDecl         -> "fn" function ;
 
 property       -> IDENTIFIER blockStmt ;
 
@@ -65,4 +65,4 @@ arguments      -> assignment ( "," assignment )* ;
 primary        -> NUMBER | STRING | "true" | "false" | "nil" | "(" expression ")" | IDENTIFIER | lambda | super ;
 
 super          -> "super" "." IDENTIFIER ;
-lambda         -> "fun" "(" parameters? ")" ( blockStmt | expression ) ;
+lambda         -> "fn" "(" parameters? ")" ( blockStmt | expression ) ;

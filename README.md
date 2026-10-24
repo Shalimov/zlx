@@ -69,11 +69,11 @@ Status of Lx-lang features:
   - [x] `break`: Exits the innermost loop.
 
 ### Functions & Closures
-- [ ] **Function Declarations**: `fun name(params) { ... }`.
+- [ ] **Function Declarations**: `fn name(params) { ... }`.
 - [ ] **Function Calls**: `callee(args)`.
 - [ ] **Return Statements**: `return expression;`.
 - [ ] **Closures**: Upvalue capture from enclosing lexical environments.
-- [ ] **Anonymous Functions / Lambdas**: `fun(params) expression`.
+- [ ] **Anonymous Functions / Lambdas**: `fn(params) expression`.
 - [ ] **Native Functions**: Built-in runtime functions (e.g., `clock()`).
 - [ ] **Call Frames & Stack**: Multi-frame call stack in the virtual machine.
 

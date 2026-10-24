@@ -77,7 +77,7 @@ pub fn disassembleInstruction(chunk: *const Chunk, offset: usize) usize {
         std.debug.print("{d: >4} ", .{chunk.lines.items[actual_offset]});
     }
 
-    const instruction: OpCode = @enumFromInt(chunk.code.items[actual_offset]);
+    const instruction: OpCode = @fromBackingInt(@intCast(chunk.code.items[actual_offset]));
     var wide = false;
     var result_offset: usize = undefined;
 
@@ -85,7 +85,7 @@ pub fn disassembleInstruction(chunk: *const Chunk, offset: usize) usize {
         .op_wide => {
             wide = true;
             actual_offset += 1;
-            continue :modifier @enumFromInt(chunk.code.items[actual_offset]);
+            continue :modifier @fromBackingInt(@intCast(chunk.code.items[actual_offset]));
         },
         inline .op_constant,
         .op_define_global,

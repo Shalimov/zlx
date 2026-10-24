@@ -8,26 +8,53 @@ const OpCode = @import("op_code.zig").OpCode;
 const Value = @import("value.zig").Value;
 const GcAllocator = @import("gc-allocator.zig").GcAllocator;
 
-const ObjectString = @import("object.zig").ObjectString;
+const objects = @import("object.zig");
+
+const ObjectString = objects.ObjectString;
+const ObjectFunction = objects.ObjectFunction;
 
 pub const InterpretError = error{
     RuntimeError,
 };
 
+const CallFrame = struct {
+    ip: [*]u8,
+    caller: *ObjectFunction,
+    base_index: usize,
+};
+
+const MAX_CALL_FRAMES = 64;
+
 pub const VirtualMachine = struct {
     const Self = @This();
-    pub const init: Self = .{ .chunk = undefined, .ip = undefined, .stack = .empty, .compiler = undefined };
 
-    ip: [*]u8,
-    chunk: *Chunk,
+    pub const init: Self = .{
+        .frames = undefined,
+        .frame_count = 0,
+        .stack = .empty,
+        .compiler = undefined,
+    };
+
+    frames: [MAX_CALL_FRAMES]CallFrame,
+    frame_count: usize,
+
     stack: std.ArrayList(Value),
     compiler: Compiler,
 
     pub fn interpret(self: *Self, alloc: std.mem.Allocator, source: []const u8) !void {
         const script = try self.compiler.compile(alloc, source);
 
-        self.chunk = &script.body;
-        self.ip = self.chunk.code.items.ptr;
+        // Sync stack with compiler locals
+        // GC also requires an object holder to be reachable
+        try self.stack.append(alloc, Value{ .val_obj = script.asObject() });
+
+        // Note that the "frames" array is already predefined with MAX_CALL_FRAMES (in memory)
+        // move an index to get current frame without errors (to set the first element)
+        self.frame_count += 1;
+        const current_frame = self.getCurrentFrame();
+        current_frame.ip = script.body.code.items.ptr;
+        current_frame.base_index = 0;
+        current_frame.caller = script;
 
         try self.run(alloc);
     }
@@ -37,6 +64,7 @@ pub const VirtualMachine = struct {
     }
 
     fn run(self: *Self, alloc: std.mem.Allocator) !void {
+        const current_frame = self.getCurrentFrame();
         // Wide is completly artifical instruction
         // It works rather as a modifer to instruct how many bytes to read after the main instruction
         // Hence we should skip rendering of the wide in debug mode to show correctly which instruction is main
@@ -59,7 +87,7 @@ pub const VirtualMachine = struct {
                     std.debug.print("\r", .{});
                 }
 
-                _ = debug.disassembleInstruction(self.chunk, self.ip - self.chunk.code.items.ptr);
+                _ = debug.disassembleInstruction(&current_frame.caller.body, current_frame.ip - current_frame.caller.body.code.items.ptr);
             }
 
             const op_code: OpCode = @fromBackingInt(@intCast(self.advance()));
@@ -245,23 +273,23 @@ pub const VirtualMachine = struct {
                 },
                 .op_get_local => {
                     const local_index = self.advance();
-                    try self.stack.append(alloc, self.stack.items[local_index]);
+                    try self.stack.append(alloc, self.stack.items[current_frame.base_index + local_index]);
                 },
                 .op_set_local => {
                     const local_index = self.advance();
-                    self.stack.items[local_index] = self.peek(0);
+                    self.stack.items[current_frame.base_index + local_index] = self.peek(0);
                 },
                 .op_inc_local => {
                     const local_index = self.advance();
                     const inc = self.advance();
 
-                    const local_val = self.stack.items[local_index];
+                    const local_val = self.stack.items[current_frame.base_index + local_index];
 
                     if (local_val != .val_number) {
                         return self.reportRuntimeError("Local increment expect only number values.\n", .{});
                     }
 
-                    self.stack.items[local_index].val_number += inc;
+                    self.stack.items[current_frame.base_index + local_index].val_number += inc;
                 },
                 .op_wide => {
                     // Incorporate modifier into the operation loop
@@ -281,7 +309,7 @@ pub const VirtualMachine = struct {
                     const jump_pos = self.readU16Arg();
 
                     if (!self.peek(0).isFalsy()) {
-                        self.ip += jump_pos;
+                        current_frame.ip += jump_pos;
                     }
                 },
 
@@ -289,20 +317,20 @@ pub const VirtualMachine = struct {
                     const jump_pos = self.readU16Arg();
 
                     if (self.peek(0).isFalsy()) {
-                        self.ip += jump_pos;
+                        current_frame.ip += jump_pos;
                     }
                 },
 
                 .op_jump_frwd => {
                     const jump_pos = self.readU16Arg();
 
-                    self.ip += jump_pos;
+                    current_frame.ip += jump_pos;
                 },
 
                 .op_jump_bkwd => {
                     const jump_pos = self.readU16Arg();
 
-                    self.ip -= jump_pos;
+                    current_frame.ip -= jump_pos;
                 },
 
                 // End of jumps
@@ -320,8 +348,9 @@ pub const VirtualMachine = struct {
     }
 
     inline fn advance(self: *Self) u8 {
-        const instruction = self.ip[0];
-        self.ip += 1;
+        const current_frame = self.getCurrentFrame();
+        const instruction = current_frame.ip[0];
+        current_frame.ip += 1;
 
         return instruction;
     }
@@ -333,6 +362,10 @@ pub const VirtualMachine = struct {
         return (high_part << 8) | lower_part;
     }
 
+    inline fn getCurrentFrame(self: *Self) *CallFrame {
+        return &self.frames[self.frame_count - 1];
+    }
+
     fn getConstantValue(self: *Self, modifier_wide: bool) Value {
         var const_index: u16 = self.advance();
 
@@ -342,14 +375,17 @@ pub const VirtualMachine = struct {
             const_index = (high_part << 8) | const_index;
         }
 
-        return self.chunk.values.items[const_index];
+        const current_frame = self.getCurrentFrame();
+
+        return current_frame.caller.body.values.items[const_index];
     }
 
     fn reportRuntimeError(self: *Self, comptime message: []const u8, args: anytype) InterpretError!void {
         std.debug.print(message, args);
+        const current_frame = self.getCurrentFrame();
 
-        const current_ip_offset = self.ip - self.chunk.code.items.ptr - 1;
-        const current_line = self.chunk.lines.items[current_ip_offset];
+        const current_ip_offset = current_frame.ip - current_frame.caller.body.code.items.ptr - 1;
+        const current_line = current_frame.caller.body.lines.items[current_ip_offset];
         std.debug.print("[line {d}] in script\n", .{current_line});
 
         // Reset the stack

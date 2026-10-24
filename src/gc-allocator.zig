@@ -106,7 +106,7 @@ pub const GcAllocator = struct {
         obj_fn.* = .{
             .arity = 0,
             .object = .{ .type = .function },
-            .body = .init,
+            .body = .empty,
             .name = null,
         };
 

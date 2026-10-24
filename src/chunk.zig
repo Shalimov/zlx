@@ -14,7 +14,7 @@ pub const Chunk = struct {
     lines: std.ArrayList(usize),
     values: std.ArrayList(Value),
 
-    pub const init: @This() = .{
+    pub const empty: @This() = .{
         .code = .empty,
         .lines = .empty,
         .values = .empty,
@@ -44,15 +44,15 @@ pub const Chunk = struct {
         const current_const_index = self.values.items.len - 1;
 
         if (current_const_index <= MAX_U8) {
-            try self.write(alloc, @intFromEnum(as_op), line);
+            try self.write(alloc, @backingInt(as_op), line);
             try self.write(alloc, @intCast(current_const_index), line);
         } else if (current_const_index <= MAX_U16) {
             const index_u16: u16 = @intCast(current_const_index);
             const low_part: u8 = @truncate(index_u16 & 0x00_FF);
             const high_part: u8 = @truncate((index_u16 >> 8) & 0x00_FF);
 
-            try self.write(alloc, @intFromEnum(OpCode.op_wide), line);
-            try self.write(alloc, @intFromEnum(as_op), line);
+            try self.write(alloc, @backingInt(OpCode.op_wide), line);
+            try self.write(alloc, @backingInt(as_op), line);
             try self.write(alloc, low_part, line);
             try self.write(alloc, high_part, line);
         } else {

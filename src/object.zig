@@ -59,7 +59,7 @@ pub const ObjectString = struct {
 pub const ObjectFunction = struct {
     object: Object,
     arity: usize = 0,
-    body: Chunk = .init,
+    body: Chunk = .empty,
     name: ?*ObjectString = null,
 
     pub fn asObject(self: *ObjectFunction) *Object {

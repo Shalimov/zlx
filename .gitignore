@@ -8,6 +8,9 @@ main
 # Zig cache
 .zig-cache
 
+# Test results
+.test-results/
+
 # Temporary files
 *.tmp
 *.cache

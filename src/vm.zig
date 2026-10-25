@@ -19,7 +19,7 @@ pub const InterpretError = error{
 
 const CallFrame = struct {
     ip: [*]u8,
-    caller: *ObjectFunction,
+    function: *ObjectFunction,
     base_index: usize,
 };
 
@@ -54,7 +54,7 @@ pub const VirtualMachine = struct {
         const current_frame = self.getCurrentFrame();
         current_frame.ip = script.body.code.items.ptr;
         current_frame.base_index = 0;
-        current_frame.caller = script;
+        current_frame.function = script;
 
         try self.run(alloc);
     }
@@ -87,7 +87,7 @@ pub const VirtualMachine = struct {
                     std.debug.print("\r", .{});
                 }
 
-                _ = debug.disassembleInstruction(&current_frame.caller.body, current_frame.ip - current_frame.caller.body.code.items.ptr);
+                _ = debug.disassembleInstruction(&current_frame.function.body, current_frame.ip - current_frame.function.body.code.items.ptr);
             }
 
             const op_code: OpCode = @fromBackingInt(@intCast(self.advance()));
@@ -377,15 +377,15 @@ pub const VirtualMachine = struct {
 
         const current_frame = self.getCurrentFrame();
 
-        return current_frame.caller.body.values.items[const_index];
+        return current_frame.function.body.values.items[const_index];
     }
 
     fn reportRuntimeError(self: *Self, comptime message: []const u8, args: anytype) InterpretError!void {
         std.debug.print(message, args);
         const current_frame = self.getCurrentFrame();
 
-        const current_ip_offset = current_frame.ip - current_frame.caller.body.code.items.ptr - 1;
-        const current_line = current_frame.caller.body.lines.items[current_ip_offset];
+        const current_ip_offset = current_frame.ip - current_frame.function.body.code.items.ptr - 1;
+        const current_line = current_frame.function.body.lines.items[current_ip_offset];
         std.debug.print("[line {d}] in script\n", .{current_line});
 
         // Reset the stack

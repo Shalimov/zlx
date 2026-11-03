@@ -92,6 +92,7 @@ const rules = rls: {
 
 pub const CompilerError = error{
     ParseError,
+    LocalNameDuplicate,
 };
 
 const FunctionType = enum(u8) {
@@ -100,7 +101,6 @@ const FunctionType = enum(u8) {
 };
 
 const MAX_U8 = std.math.maxInt(u8);
-const MAX_U8_PLUS1 = std.math.maxInt(u8) + 1;
 const MAX_U16 = std.math.maxInt(u16);
 const MAX_USIZE = std.math.maxInt(usize);
 
@@ -138,6 +138,7 @@ const LocalVar = struct {
 const EnclosingEnvironment = struct {
     const EnvMeta = packed struct {
         in_loop: bool,
+        in_fn: bool,
     };
 
     closest_break_head: usize,
@@ -152,6 +153,7 @@ const EnclosingEnvironment = struct {
             .closest_loop_entry_depth = -1,
             .meta = .{
                 .in_loop = false,
+                .in_fn = false,
             },
         };
     }
@@ -160,7 +162,7 @@ const EnclosingEnvironment = struct {
 pub const Compiler = struct {
     const Self = @This();
 
-    locals: [MAX_U8_PLUS1]LocalVar,
+    locals: [MAX_U8 + 1]LocalVar,
     locals_count: i32,
     locals_depth: i32,
 
@@ -173,7 +175,10 @@ pub const Compiler = struct {
     enclosing_env: EnclosingEnvironment,
 
     pub fn compile(self: *Compiler, alloc: std.mem.Allocator, source: []const u8) !*ObjectFunction {
-        try self.init(alloc, .script);
+        const gc_alloc = GcAllocator.from(alloc);
+        const script = try gc_alloc.createObjectFunction();
+
+        try self.init(script, .script);
 
         self.scanner.init(source);
 
@@ -188,18 +193,18 @@ pub const Compiler = struct {
         return if (self.parser.had_error) CompilerError.ParseError else compiled_fn;
     }
 
-    fn init(self: *Compiler, alloc: std.mem.Allocator, function_type: FunctionType) !void {
-        const gc_alloc = GcAllocator.from(alloc);
+    fn init(self: *Compiler, function: *ObjectFunction, comptime function_type: FunctionType) !void {
         self.function_type = function_type;
 
         self.locals_count = 0;
         self.locals_depth = 0;
 
-        self.function = try gc_alloc.createObjectFunction();
+        self.function = function;
 
         self.addLocal("", .{ .initialized = true, .mutable = false });
 
         self.enclosing_env = .init();
+        self.enclosing_env.meta.in_fn = function_type == .function;
 
         self.parser.had_error = false;
         self.parser.panic_mode = false;
@@ -208,10 +213,12 @@ pub const Compiler = struct {
     // Statements
 
     fn declaration(self: *Compiler, alloc: std.mem.Allocator) anyerror!void {
-        const mutable_var = self.match(.token_var);
-
-        if (mutable_var or self.match(.token_const)) {
-            try self.varDeclaration(alloc, mutable_var);
+        if (self.match(.token_const)) {
+            try self.varDeclaration(alloc, false);
+        } else if (self.match(.token_var)) {
+            try self.varDeclaration(alloc, true);
+        } else if (self.match(.token_fn)) {
+            try self.fnDeclaration(alloc);
         } else {
             try self.statement(alloc);
         }
@@ -230,13 +237,9 @@ pub const Compiler = struct {
         const local_variable_declaration = self.locals_depth > 0;
 
         if (local_variable_declaration) {
-            var i = self.locals_count - 1;
-
-            while (i >= 0 and self.locals[@intCast(i)].depth == self.locals_depth) : (i -= 1) {
-                if (std.mem.eql(u8, self.locals[@intCast(i)].name, var_name_token.str)) {
-                    self.errorAt(var_name_token, "Already a variable with this name in this scope.");
-                }
-            }
+            self.assertLocalNameDuplicate(var_name_token.str) catch {
+                self.errorAt(var_name_token, "Already have a variable with this name in this scope.");
+            };
 
             self.addLocal(var_name_token.str, .{ .initialized = false, .mutable = mutable });
         }
@@ -259,6 +262,88 @@ pub const Compiler = struct {
         } else {
             const var_name = try ObjectString.dupe(alloc, var_name_token.str);
             try chunk.writeConstantAs(alloc, .op_define_global, .{ .val_obj = var_name.asObject() }, var_name_token.line);
+        }
+    }
+
+    fn fnDeclaration(self: *Compiler, alloc: std.mem.Allocator) !void {
+        const chunk = self.getCurrentChunk();
+
+        self.consume(.token_identifier, "Expect function name.");
+        const fn_name_token = self.parser.previous;
+
+        const local_variable_declaration = self.locals_depth > 0;
+        if (local_variable_declaration) {
+            self.assertLocalNameDuplicate(fn_name_token.str) catch {
+                self.errorAt(fn_name_token, "Already have a function with this name in this scope.");
+            };
+
+            self.addLocal(fn_name_token.str, .{ .initialized = true, .mutable = false });
+        }
+
+        try self.fnBlock(alloc, fn_name_token.str);
+
+        if (!local_variable_declaration) {
+            const fn_name = try ObjectString.dupe(alloc, fn_name_token.str);
+            try chunk.writeConstantAs(alloc, .op_define_global, .{ .val_obj = fn_name.asObject() }, fn_name_token.line);
+        }
+    }
+
+    fn fnBlock(parent: *Compiler, alloc: std.mem.Allocator, fn_name: []const u8) !void {
+        const new_self = try alloc.create(Compiler);
+        defer alloc.destroy(new_self);
+
+        new_self.scanner = parent.scanner;
+        defer parent.scanner = new_self.scanner;
+
+        new_self.parser = parent.parser;
+        defer parent.parser = new_self.parser;
+
+        const gc_alloc = GcAllocator.from(alloc);
+        const new_function = try gc_alloc.createObjectFunction();
+        new_function.name = try ObjectString.dupe(alloc, fn_name);
+
+        try new_self.init(new_function, .function);
+
+        new_self.beginScope();
+        new_self.consume(.token_left_paren, "Expect '(' after name of the function.");
+
+        try new_self.fnParamList(alloc);
+
+        new_self.consume(.token_right_paren, "Expect ')' after list of params.");
+        new_self.consume(.token_left_brace, "Expect '{' before the function's body");
+
+        try new_self.blockStatement(alloc);
+
+        const compiled_function = try new_self.endCompilation(alloc);
+
+        try parent.getCurrentChunk().writeConstantAs(
+            alloc,
+            .op_constant,
+            .{
+                .val_obj = compiled_function.asObject(),
+            },
+            parent.parser.previous.line,
+        );
+    }
+
+    fn fnParamList(self: *Compiler, _: std.mem.Allocator) !void {
+        while (true) {
+            if (self.check(.token_right_paren) or self.check(.token_eof)) break;
+
+            if (self.function.arity > MAX_U8) {
+                self.errorAtCurr("Can't have more than 255 params.");
+            }
+
+            self.consume(.token_identifier, "Expect a param name in the parameters list");
+            const param_name = self.parser.previous;
+
+            self.addLocal(param_name.str, .{ .initialized = true, .mutable = false });
+
+            self.function.arity += 1;
+
+            if (!self.match(.token_comma)) {
+                break;
+            }
         }
     }
 
@@ -655,7 +740,7 @@ pub const Compiler = struct {
     // Scope and local related code related functions
 
     fn addLocal(self: *Compiler, local_name: []const u8, modifier: VarModifier) void {
-        if (self.locals_count == MAX_U8_PLUS1) {
+        if (self.locals_count == MAX_U8 + 1) {
             self.errorAtPrev("Too many local variables defined.");
 
             return;
@@ -889,6 +974,18 @@ pub const Compiler = struct {
 
     inline fn getCurrentChunk(self: *Compiler) *Chunk {
         return &self.function.body;
+    }
+
+    // Assertions
+
+    inline fn assertLocalNameDuplicate(self: *Compiler, name: []const u8) CompilerError!void {
+        var i = self.locals_count - 1;
+
+        while (i >= 0 and self.locals[@intCast(i)].depth == self.locals_depth) : (i -= 1) {
+            if (std.mem.eql(u8, self.locals[@intCast(i)].name, name)) {
+                return CompilerError.LocalNameDuplicate;
+            }
+        }
     }
 
     // Error reporting helpers.

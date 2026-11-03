@@ -46,8 +46,11 @@ fn repl(alloc: std.mem.Allocator, io: Io, virt: *VirtualMachine) !void {
             break;
         }
 
+        // Every VM cycle keeps "<script>" in stack
+        // This is the issue and it should be fixed after GC (mark&sweep) implementation
+        // We should throw "<script>" out and let GC does its job
         try (interpret(alloc, virt, line) catch |err| switch (err) {
-            InterpretError.RuntimeError, CompilerError.ParseError => |repl_accpt_error| writer.print("\n== [{t}]. Repl continue. ==\n", .{repl_accpt_error}),
+            InterpretError.RuntimeError, CompilerError.ParseError => |repl_accept_error| writer.print("\n== [{t}]. Repl continue. ==\n", .{repl_accept_error}),
             else => err,
         });
 

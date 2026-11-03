@@ -56,7 +56,7 @@ pub const Value = union(enum) {
                     if (obj_fn.name) |n| {
                         @branchHint(.likely);
 
-                        std.debug.print("<fn {s}>", .{n.str});
+                        std.debug.print("<fn {s}:{d}>", .{ n.str, obj_fn.arity });
                     } else {
                         std.debug.print("<script>", .{});
                     }

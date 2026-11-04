@@ -121,6 +121,7 @@ pub fn disassembleInstruction(chunk: *const Chunk, offset: usize) usize {
         inline .op_get_local,
         .op_set_local,
         .op_popn,
+        .op_call,
         => |op| {
             result_offset = printByteArgInstruction(@tagName(op), chunk, actual_offset);
         },

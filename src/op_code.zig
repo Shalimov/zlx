@@ -14,6 +14,7 @@ pub const OpCode = enum {
     op_sub,
     op_mul,
     op_div,
+    op_call,
     op_return,
     // debugging
     op_print,
@@ -25,6 +26,7 @@ pub const OpCode = enum {
     op_pop,
     op_popn,
 
+    // Jumps
     op_jump_if_true,
     op_jump_if_false,
     op_jump_frwd,

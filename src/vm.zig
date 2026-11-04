@@ -93,6 +93,7 @@ pub const VirtualMachine = struct {
             const op_code: OpCode = @fromBackingInt(@intCast(self.advance()));
 
             switch (op_code) {
+                .op_call => {},
                 .op_negate => {
                     const top_value = self.peek(0);
 

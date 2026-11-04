@@ -40,7 +40,7 @@ const rules = rls: {
 
     var table: [enum_info.field_names.len]ParseRule = @splat(ParseRule{ .prefix = null, .infix = null, .precedence = .ex_none });
 
-    table[@backingInt(TokenType.token_left_paren)] = .{ .prefix = Compiler.grouping, .infix = null, .precedence = .ex_none };
+    table[@backingInt(TokenType.token_left_paren)] = .{ .prefix = Compiler.grouping, .infix = Compiler.call, .precedence = .ex_call };
     table[@backingInt(TokenType.token_right_paren)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
     table[@backingInt(TokenType.token_left_square)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
     table[@backingInt(TokenType.token_right_square)] = .{ .prefix = null, .infix = null, .precedence = .ex_none };
@@ -328,8 +328,6 @@ pub const Compiler = struct {
 
     fn fnParamList(self: *Compiler, _: std.mem.Allocator) !void {
         while (true) {
-            if (self.check(.token_right_paren) or self.check(.token_eof)) break;
-
             if (self.function.arity > MAX_U8) {
                 self.errorAtCurr("Can't have more than 255 params.");
             }
@@ -604,6 +602,33 @@ pub const Compiler = struct {
             .token_bang_equal => self.emitOps(alloc, .op_equal, .op_not),
             else => unreachable,
         };
+    }
+
+    fn call(self: *Compiler, alloc: std.mem.Allocator, _: bool) !void {
+        const arg_count = try self.argumentList(alloc);
+        try self.emitOpByteArg(alloc, .op_call, arg_count);
+    }
+
+    fn argumentList(self: *Compiler, alloc: std.mem.Allocator) !u8 {
+        var arg_count: usize = 0;
+
+        if (!self.check(.token_right_paren)) {
+            while (true) {
+                try self.expression(alloc);
+
+                if (arg_count == MAX_U8) {
+                    self.errorAtCurr("Can't have more than 255 arguments");
+                }
+
+                arg_count += 1;
+
+                if (!self.match(.token_comma)) break;
+            }
+        }
+
+        self.consume(.token_right_paren, "Expect ')' after arguments.");
+
+        return @intCast(arg_count);
     }
 
     fn unary(self: *Compiler, alloc: std.mem.Allocator, _: bool) !void {
